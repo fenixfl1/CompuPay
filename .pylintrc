@@ -1,0 +1,32 @@
+[MASTER]
+ignore = __test__/*
+load-plugins=pylint_django
+
+[django]
+django-settings-module=core.settings
+
+[MESSAGES CONTROL]
+disable=
+    missing-docstring,
+    invalid-name,
+    unused-import
+
+[FORMAT]
+max-line-length=120
+max-args=8
+
+[TYPECHECK]
+generated-members=models.Manager,serializers.ModelSerializer,Meta,models.ManyToManyField,CharField
+
+[REPORTS]
+output-format=json
+
+[VARIABLES]
+init-import=no
+
+[BASIC]
+min-public-methods=0
+
+[PYLINT]
+extension-pkg-whitelist=
+    django-stubs
