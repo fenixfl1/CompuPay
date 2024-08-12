@@ -72,7 +72,7 @@ class UserManager(BaseUserManager):
         email: str,
         username: str,
         password: str,
-        created_by: "User"  = None,
+        created_by: "User" = None,
         **extra_fields,
     ) -> "User":
         extra_fields.setdefault("is_staff", True)
@@ -127,7 +127,9 @@ class User(AbstractBaseUser):
     salary = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True, blank=False, null=False)
     updated_at = models.DateTimeField(null=True, blank=True)
-    gender = models.CharField(max_length=1, blank=False, null=False, default="M", choices=GENDER_CHOICES)
+    gender = models.CharField(
+        max_length=1, blank=False, null=False, default="M", choices=GENDER_CHOICES
+    )
     birth_date = models.DateField(blank=True, null=True)
     state = models.CharField(
         default="A", max_length=1, null=False, choices=STATE_CHOICES
@@ -180,12 +182,13 @@ class User(AbstractBaseUser):
     ACTIVE = "A"
     INACTIVE = "I"
 
-    REQUIRED_FIELDS= [
+    REQUIRED_FIELDS = [
         "identity_document",
-        "document_type",
         "name",
         "last_name",
         "email",
+        "phone",
+        "gender",
         "password",
     ]
 
