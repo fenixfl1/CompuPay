@@ -27,7 +27,7 @@ class UserManager(BaseUserManager):
         email: str,
         username: str,
         password: str,
-        created_by: "User",
+        created_by: "User" = None,
         **extra_fields,
     ) -> "User":
         try:
@@ -72,7 +72,7 @@ class UserManager(BaseUserManager):
         email: str,
         username: str,
         password: str,
-        created_by: "User",
+        created_by: "User"  = None,
         **extra_fields,
     ) -> "User":
         extra_fields.setdefault("is_staff", True)
@@ -179,6 +179,15 @@ class User(AbstractBaseUser):
 
     ACTIVE = "A"
     INACTIVE = "I"
+
+    REQUIRED_FIELDS= [
+        "identity_document",
+        "document_type",
+        "name",
+        "last_name",
+        "email",
+        "password",
+    ]
 
     NON_UPDATEABLE_FIELDS = [
         "created_at",
