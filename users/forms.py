@@ -1,5 +1,6 @@
 from typing import Any
 from django import forms
+from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.contrib.auth import password_validation
 from django.utils.translation import gettext_lazy as _
@@ -10,8 +11,6 @@ from django.contrib.auth.forms import (
     UserChangeForm,
 )
 
-from django import forms
-from django.core.exceptions import ValidationError
 
 from users.models import MenuOptions, OperationsMeneOptions, UserPermission
 
@@ -96,6 +95,9 @@ class OperationsMeneOptionsForm(forms.ModelForm):
     # rewritte the create method
     def create(self, validated_data):
         # count the number of operations
-        operations_count = self.Meta.model.objects.count()
-        validated_data["operation_id"] = operations_count + 1
+        operations_count = self.Meta.model.objects.all().values_list(
+            "operation_id", flat=True
+        )
+        max_operation_id = max(operations_count) if operations_count else 0
+        validated_data["operation_id"] = max_operation_id + 1
         return self.Meta.model.objects.create(**validated_data)
