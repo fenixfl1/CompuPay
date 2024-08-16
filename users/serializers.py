@@ -81,7 +81,7 @@ class UserSerializer(BaseModelSerializer):
     gross_salary = serializers.SerializerMethodField()
     net_salary = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField(source="get_avatar")
-    gender = serializers.SerializerMethodField()
+    desc_gender = serializers.SerializerMethodField()
     supervisor = serializers.SerializerMethodField()
 
     def get_supervisor(self, instance: User | dict):
@@ -91,7 +91,7 @@ class UserSerializer(BaseModelSerializer):
                 return f"{supervisor.name} {supervisor.last_name}" or ""
         return ""
 
-    def get_gender(self, instance: User | dict):
+    def get_desc_gender(self, instance: User | dict):
         if isinstance(instance, User):
             genders = dict(User.GENDER_CHOICES)
             return genders.get(instance.gender, "")
@@ -100,6 +100,10 @@ class UserSerializer(BaseModelSerializer):
     def get_tax(self, instance: User | dict):
         try:
             salary = 0
+
+            if instance.salary == 0:
+                return 0
+
             if isinstance(instance, User):
                 salary = float(instance.salary or 0)
             else:

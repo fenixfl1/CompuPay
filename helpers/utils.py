@@ -1,6 +1,16 @@
 from datetime import datetime
 from django.db.models import Q
+from django.forms import ValidationError
 from rest_framework.exceptions import APIException
+
+from helpers.constants import (
+    INVALID_DATE_FORMAT,
+    INVALID_LIST_VALUE,
+    MSG_INVALID_ISO_DATE,
+    MSG_INVALID_OPERATOR_FOR_LIST,
+    MSG_INVALID_VALUE,
+)
+from helpers.exceptions import get_traceback
 
 
 def dict_key_to_lower(data: dict | list[dict]) -> dict | list[dict]:
@@ -35,14 +45,15 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
     * `>=`  (greater than or equal)
     * `IN` (in list)
     * `NOT IN` (not in list)
-    * `IS NULL` (is null)\n
+    * `IS NULL` (is null)
+    * `BETWEEN` (between two values)\n`
     """
     query = Q()
     exclude_conditions = []
     lookup = ""
     for condition in conditions:
         field: str | list = condition.get("field")
-        operator: str = condition.get("operator")
+        operator: str = condition.get("operator", "").upper()
         value: str | int | bool = condition.get("condition")
         data_type: str = condition.get("dataType")
 
@@ -62,6 +73,7 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
             "<=": "__lte",
             "IN": "__in",
             "IS NULL": "__isnull",
+            "BETWEEN": "__range",
         }
 
         data_type_map = {
@@ -86,13 +98,19 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
                 f"Invalid condition for operator 'IS NULL'. Expected a boolean value but got '{data_type}'"
             )
 
+        if operator in ["IN", "NOT IN", "BETWEEN"] and not isinstance(value, list):
+            raise APIException(
+                f"Invalid value for operator '{operator}'. Expected a list but got '{type(value)}'"
+            )
+
         match data_type:
             case "data":
                 try:
-                    value = datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+                    value = datetime.fromisoformat(value).date()
                 except ValueError as exc:
+                    get_traceback()
                     raise APIException(
-                        f"Invalid date format for field {field}. Expected an ISO 8601 date format"
+                        detail=MSG_INVALID_ISO_DATE % field, code=INVALID_DATE_FORMAT
                     ) from exc
             case "int":
                 try:
@@ -104,7 +122,7 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
             case "bool":
                 try:
                     if not isinstance(value, bool):
-                        raise ValueError
+                        raise ValueError(f"Invalid boolean format for field '{field}'")
                     value = bool(value)
                 except Exception as exc:
                     raise APIException(
@@ -113,14 +131,14 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
             case "list":
                 try:
                     if not isinstance(value, list):
-                        raise ValueError
-                    if operator not in ["IN", "NOT IN"]:
-                        raise APIException(
-                            f"Invalid operator for list data type. Expected 'IN' or 'NOT IN' but got '{operator}'"
+                        raise ValueError(
+                            MSG_INVALID_VALUE % {"data_type": "list", "field": field}
                         )
+                    if operator not in ["IN", "NOT IN", "BETWEEN"]:
+                        raise ValueError(MSG_INVALID_OPERATOR_FOR_LIST % operator)
                 except ValueError as exc:
                     raise APIException(
-                        f"Invalid list format for field {field}"
+                        detail=str(exc), code=INVALID_LIST_VALUE
                     ) from exc
 
         if isinstance(field, list):

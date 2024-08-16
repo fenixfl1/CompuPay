@@ -315,11 +315,41 @@ class UserViewSet(ViewSet):
             if field in User.NON_UPDATEABLE_FIELDS:
                 raise APIException(f"Field '{field}' is not updatable.")
 
+        supervisor = data.get("supervisor", None)
+        if supervisor:
+            data["supervisor"] = User.objects.get(username=supervisor)
+            if not data["supervisor"]:
+                raise APIException(f"Supervisor '{supervisor}' was not found.")
+
+        roles = data.pop("roles", None)
+        if roles:
+            roles = Roles.objects.filter(rol_id__in=roles)
+            if not roles:
+                raise APIException("Invalid roles")
+
         user = User.update_user(request, **data)
 
-        serializer = UserSerializer(
-            user, data=model_to_dict(user), context={"request": request}
-        )
+        if roles:
+            try:
+                roles_users = RolesUsers.objects.filter(user_id=user)
+                if roles_users:
+                    roles_users.update(state=RolesUsers.INACTIVE)
+                for role in roles:
+                    RolesUsers.create(
+                        request, user_id=user, rol_id=role, state=RolesUsers.ACTIVE
+                    )
+            # pylint: disable=broad-except
+            except Exception:
+                return Response(
+                    {
+                        "message": "User updated successfully. But an error occurred while assigning roles."
+                    },
+                    status=400,
+                )
+
+        data = model_to_dict(user)
+
+        serializer = UserSerializer(user, data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
         return Response(
