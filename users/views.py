@@ -249,9 +249,6 @@ class UserViewSet(ViewSet):
             if not roles:
                 raise APIException("Invalid roles")
 
-        serializer = UserSerializer(data=data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-
         data["created_by"] = request.user
 
         if data.get("supervisor", None):
@@ -265,7 +262,7 @@ class UserViewSet(ViewSet):
         setializer.is_valid(raise_exception=True)
 
         return Response(
-            {"data": serializer.data, "message": "User created successfully"}
+            {"data": setializer.data, "message": "User created successfully"}
         )
 
     @viewException

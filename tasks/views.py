@@ -67,9 +67,15 @@ class TaskViewSet(BaseProtectedViewSet):
         task = Task.create(request, **data)
 
         for tag in tags:
-            tag = Tags.objects.filter(tag_id=tag).first()
-            tags_task = {"task": task, "tag": tag, "state": "A"}
-            TagXTasks.create(request, **tags_task)
+            try:
+                tag = Tags.objects.filter(tag_id=tag).first()
+                tags_task = {"task": task, "tag": tag, "state": "A"}
+                TagXTasks.create(request, **tags_task)
+            # pylint: disable=broad-except
+            except Exception as e:
+                return Response(
+                    {"message": "Tarea creada con errores", "error": str(e)}
+                )
 
         serializer = TaskSeriaizer(
             task, data=model_to_dict(task), context={"request": request}
