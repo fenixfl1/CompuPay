@@ -37,7 +37,10 @@ class UserManager(BaseUserManager):
 
             roles = extra_fields.pop("roles", None)
 
+            users_count = self.all().count()
+
             user = self.model(
+                user_id=users_count + 1,
                 name=name,
                 last_name=last_name,
                 email=email,
@@ -51,15 +54,26 @@ class UserManager(BaseUserManager):
             user.save(using=self._db)
 
             if roles is not None:
-                roles_users = []
-                roles = Roles.objects.filter(rol_id__in=roles)
+                try:
+                    roles_users = []
+                    roles = Roles.objects.filter(rol_id__in=roles)
 
-                for role in roles:
-                    roles_users.append(
-                        RolesUsers(rol_id=role, user_id=user, created_by=created_by)
-                    )
+                    for role in roles:
+                        roles_user_count = RolesUsers.objects.all().count()
+                        roles_users.append(
+                            RolesUsers(
+                                rol_id=role,
+                                user_id=user,
+                                created_by=created_by,
+                                pk=roles_user_count + 2,
+                                state="A",
+                            )
+                        )
 
-                RolesUsers.objects.bulk_create(roles_users)
+                    RolesUsers.objects.bulk_create(roles_users)
+                except Exception as e:
+                    user.delete()
+                    raise APIException(str(e)) from e
 
             return user
         except Exception as e:
