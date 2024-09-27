@@ -1,6 +1,10 @@
 from datetime import datetime
+from typing import Self
+
 from django.db import models
 from django.utils import timezone
+
+from rest_framework.request import Request
 from rest_framework.exceptions import APIException
 
 
@@ -18,6 +22,10 @@ class BaseModels(models.Model):
     """
     Base model for all models in the project.
     """
+
+    ACTIVE = "A"
+    INACTIVE = "I"
+    STATE_CHOICES = STATE_CHOICES
 
     state = models.CharField(
         default="A", max_length=1, null=False, choices=STATE_CHOICES
@@ -48,8 +56,10 @@ class BaseModels(models.Model):
         "updated_by",
     ]
 
+    objects = ModelManager()
+
     @classmethod
-    def create(cls, request, **kwargs):
+    def create(cls, request: Request, **kwargs):
         try:
             kwargs["created_by"] = request.user
             kwargs["created_at"] = datetime.now()
@@ -67,7 +77,7 @@ class BaseModels(models.Model):
             raise APIException(e) from e
 
     @classmethod
-    def update(cls, request, instance, **kwargs):
+    def update(cls, request: Request, instance: Self, **kwargs):
         try:
             # pylint: disable=no-member
             allowed_states = dict(cls.STATE_CHOICES)
@@ -78,10 +88,7 @@ class BaseModels(models.Model):
                 )
 
             non_updateable_fields = [
-                # pylint: disable=no-member
-                field
-                for field in kwargs
-                if field.lower() in cls.NON_UPDATEABLE_FIELDS
+                field for field in kwargs if field.lower() in cls.NON_UPDATEABLE_FIELDS
             ]
             if non_updateable_fields:
                 raise APIException(
@@ -102,8 +109,6 @@ class BaseModels(models.Model):
 
         except Exception as e:
             raise APIException(str(e)) from e
-
-    objects = ModelManager()
 
     class Meta:
         abstract = True

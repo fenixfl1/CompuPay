@@ -2,20 +2,36 @@ import datetime
 from django.contrib.auth import authenticate, get_user_model
 from django.forms.models import model_to_dict
 from django.db.models import Q, Max
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.exceptions import APIException, NotFound
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
+from rest_framework.request import Request
 from rest_framework.authtoken.models import Token
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from helpers.exceptions import UserDoesNotExist, UserException, viewException
-from helpers.serializers import PaginationSerializer
-from helpers.utils import advanced_query_filter, dict_key_to_lower, simple_query_filter
+from helpers.exceptions import (
+    PayloadValidationError,
+    UserDoesNotExist,
+    UserException,
+    viewException,
+)
+from helpers.serializers import DynamicSerializer, PaginationSerializer
+from helpers.utils import (
+    advanced_query_filter,
+    dict_key_to_lower,
+    list_values_to_lower,
+    simple_query_filter,
+)
+from payroll.models import DeductionXuser
 from users.models import (
     STATE_CHOICES,
+    ActivityLog,
+    Department,
     MenuOptions,
     OperationsMeneOptions,
+    Parameters,
     PermissionsRoles,
     Roles,
     RolesUsers,
@@ -181,11 +197,12 @@ class UserViewSet(ViewSet):
         `METHOD`: POST
         """
         conditions: list[dict] = request.data.get("condition", None)
+        fields = list_values_to_lower(request.data.get("fields", None))
 
         if not conditions:
-            raise APIException("The condition are required")
+            raise PayloadValidationError("The condition are required")
         if not isinstance(conditions, list):
-            raise APIException("Invalid condition")
+            raise PayloadValidationError("Invalid condition")
 
         condition, exclude_condition = advanced_query_filter(conditions)
 
@@ -197,7 +214,15 @@ class UserViewSet(ViewSet):
         paginator = PaginationSerializer(request=request)
         page = paginator.paginate_queryset(users.distinct(), request)
 
-        serializer = UserSerializer(page, many=True, context={"request": request})
+        serializer = []
+        if fields:
+            if not isinstance(fields, list):
+                raise PayloadValidationError("Invalid format for field 'FIELDS'")
+            serializer = DynamicSerializer(
+                model=User, fields=fields, instance=page, many=True
+            )
+        else:
+            serializer = UserSerializer(page, many=True, context={"request": request})
 
         return paginator.get_paginated_response(serializer.data)
 
@@ -254,7 +279,28 @@ class UserViewSet(ViewSet):
         if data.get("supervisor", None):
             data["supervisor"] = User.objects.get(username=data["supervisor"])
 
-        user = User.objects.create_user(**data)
+        if not data.get("password", None):
+            data["password"] = Parameters.objects.get(name="DEFAULT_PASSWORD").name
+
+        deductions = data.pop("deductions", [])
+
+        data["department"] = Department.objects.get(department_id=data["department"])
+
+        user: User = User.objects.create_user(**data)
+
+        try:
+            DeductionXuser.add_deductions_to_user(deductions, user)
+        except Exception as e:
+            RolesUsers.objects.filter(user_id=user.user_id).delete()
+            user.delete()
+            raise APIException(str(e)) from e
+
+        ActivityLog.register_activity(
+            instance=user,
+            user=request.user,
+            action=1,
+            message=f"@{request.user.username} creo al usuario @{user.username}",
+        )
 
         setializer = UserSerializer(
             user, data=model_to_dict(user), context={"request": request}
@@ -289,9 +335,18 @@ class UserViewSet(ViewSet):
         user.state = state
         user.save()
 
+        action = "inhabilitó" if state == "I" else "activo"
+
+        ActivityLog.register_activity(
+            instance=user,
+            user=request.user,
+            action=2,
+            message=f"@{request.user.username} {action} al usuario @{user.username}",
+        )
+
         return Response({"message": "User state changed successfully."})
 
-    def update_user(self, request):
+    def update_user(self, request: Request):
         """
         Update the given user.\n
         `METHOD`: PUT
@@ -324,7 +379,9 @@ class UserViewSet(ViewSet):
             if not roles:
                 raise APIException("Invalid roles")
 
-        user = User.update_user(request, **data)
+        deductions = data.pop("deductions")
+
+        message = "User updated successfully."
 
         if roles:
             try:
@@ -337,21 +394,35 @@ class UserViewSet(ViewSet):
                     )
             # pylint: disable=broad-except
             except Exception:
-                return Response(
-                    {
-                        "message": "User updated successfully. But an error occurred while assigning roles."
-                    },
-                    status=400,
-                )
+                message = "User updated successfully. But an error occurred while assigning roles."
+
+        if deductions:
+            try:
+                DeductionXuser.add_deductions_to_user(deductions, user)
+            # pylint: disable=broad-except
+            except Exception:
+                message = "User updated successfully. But an error occurred while assigning deductions"
+
+        department = data.get("department", None)
+        if department:
+            data["department"] = Department.objects.get(department_id=department)
+
+        user = User.update_user(request, **data)
 
         data = model_to_dict(user)
 
         serializer = UserSerializer(user, data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
-        return Response(
-            {"data": serializer.data, "message": "User updated successfully."}
-        )
+        if user != request.user:
+            ActivityLog.register_activity(
+                instance=user,
+                user=request.user,
+                action=1,
+                message=f"@{request.user.username} creo al usuario @{user.username}",
+            )
+
+        return Response({"data": serializer.data, "message": message})
 
     @viewException
     def change_user_rol(self, request):
@@ -386,7 +457,15 @@ class UserViewSet(ViewSet):
             user_id=user,
             state="I",
         )
-        RolesUsers.create(request, user_id=user, rol_id=rol, state="A")
+        new_rol = RolesUsers.create(request, user_id=user, rol_id=rol, state="A")
+
+        ActivityLog.register_activity(
+            instance=new_rol,
+            user=request.user,
+            action=1,
+            message=f"""
+            @{request.user.username} cambio el rol {roles_users.rol_id.name} a {new_rol.rol_id.name} para el usuario @{new_rol.get_username()}""",
+        )
 
         return Response({"message": "Role change successfully."})
 
@@ -409,7 +488,16 @@ class UserViewSet(ViewSet):
         if not role:
             raise APIException(f"Role with id: '{rol_id}' was not found.")
 
-        RolesUsers.create(request, user_id=user, rol_id=role, state=RolesUsers.ACTIVE)
+        roles_users = RolesUsers.create(
+            request, user_id=user, rol_id=role, state=RolesUsers.ACTIVE
+        )
+
+        ActivityLog.register_activity(
+            instance=roles_users,
+            user=request.user,
+            action=1,
+            message=f"@{request.user.username} asigno un rol a {user.username}",
+        )
 
         return Response({"message": "Role assigned successfully."})
 
@@ -440,12 +528,19 @@ class UserViewSet(ViewSet):
                 f"User with id: '{user_id}' does not have the role '{rol_id}'."
             )
 
-        RolesUsers.update(
+        new_roles_users = RolesUsers.update(
             request,
             roles_users,
             rol_id=role,
             user_id=user,
             state=RolesUsers.INACTIVE,
+        )
+
+        ActivityLog.register_activity(
+            instance=new_roles_users,
+            user=request.user,
+            action=2,
+            message=f"@{request.user.username} le removio su rol a {user.username}",
         )
 
         return Response({"message": "Role removed successfully."})
@@ -474,6 +569,31 @@ class UserViewSet(ViewSet):
 
         return paginator.get_paginated_response(serializer.data)
 
+    @viewException
+    def get_department_list(self, request: Request):
+        """
+        This andpoint accepts a condition with any field in the mode `Department`
+        and return all data tha match with the given condition\n
+        `METHOD` POST
+        """
+        condition = dict_key_to_lower(request.data.get("condition", None))
+        fields = list_values_to_lower(request.data.get("fields", "__all__"))
+
+        if not condition:
+            raise PayloadValidationError("Condition is required")
+
+        departments = Department.objects.filter(simple_query_filter(condition))
+
+        serializer = DynamicSerializer(
+            model=Department,
+            fields=fields,
+            instance=departments,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response({"data": serializer.data})
+
 
 class MenuOptionsViewSet(ViewSet):
     """
@@ -493,8 +613,14 @@ class MenuOptionsViewSet(ViewSet):
         Return a list of menu options.\n
         `METHOD`: GET
         """
-
         user_id = request.user.user_id
+        user = User.objects.get(user_id=user_id)
+        if not user:
+            raise UserDoesNotExist(f"User with id: '{user_id}' was not found.")
+
+        roles = user.roles.all().values_list("rol_id", flat=True)
+
+        user = User.objects.get(user_id=user_id)
 
         user_permissions = UserPermission.objects.filter(
             Q(user_id=user_id) & Q(state=UserPermission.ACTIVE)
@@ -506,9 +632,14 @@ class MenuOptionsViewSet(ViewSet):
         ).values_list("menu_option_id", flat=True)
 
         menu_options = MenuOptions.objects.filter(
-            Q(menu_option_id__in=opration_menu_options) & Q(state=MenuOptions.ACTIVE)
-        )
+            Q(
+                Q(menu_option_id__in=opration_menu_options)
+                | Q(menuoptonxroles__rol_id__in=roles)
+                | Q(userpermission__user_id=user)
+            )
+            & Q(state=MenuOptions.ACTIVE)
+            & Q(parent_id__isnull=True)
+        ).distinct()
 
         serializer = MenuOptionsSerializer(menu_options, many=True)
-
         return Response({"data": serializer.data})

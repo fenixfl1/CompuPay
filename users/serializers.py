@@ -2,7 +2,9 @@ from rest_framework import serializers
 from django.db.models import Q
 
 from helpers.serializers import BaseModelSerializer
+from payroll.models import DeductionXuser
 from users.models import (
+    Department,
     MenuOptions,
     OperationsMeneOptions,
     Parameters,
@@ -32,6 +34,9 @@ class AuthenticateUserSerializer(BaseModelSerializer):
     session_cookie = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
 
+    def get_full_name(self, instance: User):
+        return f"{instance.name} {instance.last_name}"
+
     def get_roles(self, instance: User):
         roles_user = RolesUsers.objects.filter(
             Q(user_id=instance.user_id) & Q(state=RolesUsers.ACTIVE)
@@ -41,9 +46,6 @@ class AuthenticateUserSerializer(BaseModelSerializer):
         ).all()
         serializer = RolesSerializer(roles, many=True)
         return [role["NAME"] for role in serializer.data]
-
-    def get_full_name(self, instance: User):
-        return instance.get_full_name()
 
     def get_session_cookie(self, _instance: User):
         session_cookie = {
@@ -82,9 +84,20 @@ class UserSerializer(BaseModelSerializer):
     net_salary = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField(source="get_avatar")
     desc_gender = serializers.SerializerMethodField()
-    supervisor = serializers.SerializerMethodField()
+    name_supervisor = serializers.SerializerMethodField()
+    deductions = serializers.SerializerMethodField(source="get_deductions")
+    desc_department = serializers.SerializerMethodField()
 
-    def get_supervisor(self, instance: User | dict):
+    def get_desc_department(self, obj: User):
+        if obj.department:
+            return obj.department.name
+        return None
+
+    def get_deductions(self, obj: User):
+        deductions = DeductionXuser.objects.filter(user=obj.username)
+        return deductions.values_list("deduction_id", flat=True)
+
+    def get_name_supervisor(self, instance: User | dict):
         if isinstance(instance, User):
             if instance.supervisor:
                 supervisor = instance.supervisor
@@ -206,6 +219,7 @@ class MenuOptionsSerializer(BaseModelSerializer):
             "parameters",
             "children",
             "icon",
+            "content",
         )
 
 
