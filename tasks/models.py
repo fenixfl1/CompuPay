@@ -97,7 +97,7 @@ class Task(BaseModels):
         db_table = "TASKS"
         verbose_name = "Task"
         verbose_name_plural = "Tasks"
-        ordering = ["task_id"]
+        ordering = ["-task_id"]
 
 
 class TaskXusers(BaseModels):
@@ -166,9 +166,6 @@ class TaskXusers(BaseModels):
             return True
         # pylint: disable=broad-except
         except Exception as e:
-            print("*" * 75)
-            print(f"error: {e} \n Task: {task} \n users: {users}")
-            print("*" * 75)
             return False
 
     class Meta:

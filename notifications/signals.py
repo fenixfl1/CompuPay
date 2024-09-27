@@ -12,16 +12,17 @@ sio = socketio.AsyncClient()
 
 @receiver(post_save, sender=ActivityLog)
 def send_notification(sender, instance, created, **kwargs):
-
-    print("*" * 75)
-    print(f"Sender: {sender} \n Created: {created} \n Args: {kwargs}")
-    print("*" * 75)
-
+    created
+    sender
     channel_layer = get_channel_layer()
     message = f"Nuevo registro creado: {instance}"
 
+    channel_layer.send(
+        "channel_name", {"type": "notification.message", "message": message}
+    )
+
     async_to_sync(channel_layer.group_send)(
-        "notification_tasks",
+        "notification",
         {
             "type": "notification.message",
             "message": message,

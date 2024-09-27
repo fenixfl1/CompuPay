@@ -18,7 +18,6 @@ from dashboard.serializers import (
     ActivitySerializer,
     EmployeesByDepartmentSerializer,
     SalaryByDepartmentSerializer,
-    UserStatisticsSerializer,
 )
 from helpers.common import BaseProtectedViewSet
 from helpers.exceptions import PayloadValidationError, viewException

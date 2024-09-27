@@ -20,18 +20,9 @@ class NotificationConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
-        print("*" * 75)
-        print(f"Code: {code}")
-        print("*" * 75)
-
     async def receive(self, text_data=None, bytes_data=None):
         text_data_json = json.loads(text_data)
         message = text_data_json["message"]
-
-        print("*" * 75)
-        print(f"Message: {text_data}")
-        print("*" * 75)
-
         await self.channel_layer.group_send(
             self.room_group_name, {"type": "notification.message", "message": message}
         )
