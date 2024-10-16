@@ -155,16 +155,23 @@ class TaskViewSet(BaseProtectedViewSet):
         if completed is None:
             raise PayloadValidationError("COMPLETED is required.")
 
-        if Task.objects.filter(task_id=task_id).exists() is False:
+        task = Task.objects.filter(task_id=task_id)
+        if task.exists() is False:
             raise APIException("Any task found with the given task_id.")
 
-        completed_at = timezone.now() if completed is True else None
+        task = task.first()
 
-        Task.objects.filter(task_id=task_id).update(
-            completed=completed, completion_date=completed_at
+        completed_at = timezone.now() if completed is True else None
+        Task.update(
+            request=request,
+            instance=task,
+            completed=completed,
+            completion_date=completed_at,
         )
 
-        task = Task.objects.filter(task_id=task_id).first()
+        # Task.objects.filter(task_id=task_id).update(
+        #     completed=completed, completion_date=completed_at
+        # )
 
         text_action = "completada" if completed is True else "no completada"
 

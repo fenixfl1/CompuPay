@@ -1,6 +1,6 @@
 from datetime import datetime
 from django.db.models import Q
-from django.forms import ValidationError
+from django.utils import timezone
 from rest_framework.exceptions import APIException
 
 from helpers.constants import (
@@ -255,3 +255,31 @@ def get_month_day_name(int_value: int, opt: str) -> str:
 
 def inrange(n, range1, range2) -> bool:
     return range1[0] <= n <= range1[1] or range2[0] <= n <= range2[1]
+
+
+def elapsed_time(date: datetime):
+    now = timezone.now()
+    diff = now - date
+
+    seconds = diff.total_seconds()
+    minutes = seconds // 60
+    hours = minutes // 60
+    days = hours // 24
+    weeks = days // 7
+    months = days // 30
+    years = days // 365
+
+    if seconds < 60:
+        return "hace unos segundos"
+    if minutes < 60:
+        return f"hace {int(minutes)} minuto(s)"
+    if hours < 24:
+        return f"hace {int(hours)} hora(s)"
+    if days < 7:
+        return f"hace {int(days)} día(s)"
+    if weeks < 4:
+        return f"hace {int(weeks)} semana(s)"
+    if months < 12:
+        return f"hace {int(months)} mes(es)"
+
+    return f"hace {int(years)} año(s)"

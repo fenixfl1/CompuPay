@@ -117,7 +117,9 @@ class User(AbstractBaseUser):
     )
 
     user_id = models.AutoField(primary_key=True)
-    identity_document = models.CharField(max_length=20, blank=False, null=False)
+    identity_document = models.CharField(
+        max_length=20, blank=False, null=False, unique=True
+    )
     document_type = models.CharField(
         max_length=2,
         blank=False,
@@ -772,8 +774,8 @@ class PermissionsRoles(BaseUsersModels):
 
     class Meta:
         db_table = "PERMISSIONS_X_ROLES"
-        verbose_name = "Permisio por rol"
-        verbose_name_plural = "Permisios por roles"
+        verbose_name = "Permios por rol"
+        verbose_name_plural = "Permisos por roles"
 
 
 class Parameters(BaseUsersModels):

@@ -35,7 +35,7 @@ class Payroll(BaseModels):
     payroll_id = models.AutoField(primary_key=True)
     period_start = models.DateField()
     period_end = models.DateField()
-    period = models.IntegerField(default=1, unique_for_month=True)
+    period = models.IntegerField(default=1)
     status = models.CharField(
         blank=True, null=True, choices=STATUS_CHOICES, default=PENDING
     )
@@ -199,7 +199,8 @@ class Payroll(BaseModels):
                         operator=operator,
                     )
                     detail.save()
-                    Adjustment.objects.update(state=Adjustment.COMPLETED)
+                    adjustment.state = Adjustment.ACTIVE
+                    adjustment.save()
 
             discount = Adjustment.calc_deduction(entry)
             bonus = Adjustment.calc_bonus(entry)
@@ -207,8 +208,13 @@ class Payroll(BaseModels):
             sfs = DeductionXuser.get_sfs(entry.user)
             isr = DeductionXuser.get_isr(entry.user)
 
+            deduction_amount = 0
+
+            if self.period == settings.periods:
+                deduction_amount = afp + sfs + isr
+
             salary = entry.user.salary / settings.periods
-            net_salary = (salary + bonus) - discount - afp - sfs - isr
+            net_salary = (salary + bonus) - discount - deduction_amount
 
             detail = PayrollPaymentDetail(
                 payroll=entry.payroll,
@@ -226,7 +232,7 @@ class Payroll(BaseModels):
             payroll_entries.update(status=True)
 
     def save(self, *args, **kwargs):
-        self.clean()  # Llama a clean antes de guardar
+        # self.clean()  # Llama a clean antes de guardar
         super().save(*args, **kwargs)
 
     class Meta:
@@ -374,8 +380,8 @@ class Adjustment(BaseModels):
     COMPLETED = "S"
     STATE_CHOICES = (("A", "Activo"), ("I", "Inactivo"), ("S", "Saldada"))
     ADJUSTMENT_TYPE = [
-        ("B", "Bono"),
-        ("D", "Descuento"),
+        ("B", "BONO"),
+        ("D", "DESCUENTO"),
     ]
 
     state = models.CharField(
@@ -535,20 +541,46 @@ class DeductionXuser(BaseModels):
     @classmethod
     def add_deductions_to_user(cls, deductions: list["Deductions"], user: User):
         user_deductions = []
-        max_id = DeductionXuser.objects.all().aggregate(Max("id"))["id__max"]
-        for deduction in deductions:
-            max_id += 1
-            user_deductions.append(
-                DeductionXuser(
-                    id=max_id,
-                    state=Deductions.ACTIVE,
-                    user=user,
-                    deduction=Deductions.objects.get(deduction_id=deduction),
-                    created_by=user.created_by,
-                    created_at=datetime.datetime.now(),
+        max_id = DeductionXuser.objects.all().aggregate(Max("id"))["id__max"] or 0
+        current_user_deductions = DeductionXuser.objects.filter(user=user)
+
+        # Crear un set con los IDs de las deducciones nuevas y las actuales del usuario
+        new_deductions_ids = {deduction for deduction in deductions}
+
+        # Inactivar deducciones que no están en la lista proporcionada
+        deductions_to_inactivate = current_user_deductions.exclude(
+            deduction__deduction_id__in=new_deductions_ids
+        )
+        deductions_to_inactivate.update(state=Deductions.INACTIVE)
+
+        # Procesar las deducciones proporcionadas en la lista
+        for deduction_id in new_deductions_ids:
+            existing_deduction = current_user_deductions.filter(
+                deduction__deduction_id=deduction_id
+            ).first()
+
+            if existing_deduction:
+                # Si la deducción ya existe y está inactiva, actualizar su estado a activo
+                if existing_deduction.state == Deductions.INACTIVE:
+                    existing_deduction.state = Deductions.ACTIVE
+                    existing_deduction.save()
+            else:
+                # Si no existe, agregar una nueva deducción
+                max_id += 1
+                user_deductions.append(
+                    DeductionXuser(
+                        id=max_id,
+                        state=Deductions.ACTIVE,
+                        user=user,
+                        deduction=Deductions.objects.get(deduction_id=deduction_id),
+                        created_by=user.created_by,
+                        created_at=datetime.datetime.now(),
+                    )
                 )
-            )
-        DeductionXuser.objects.bulk_create(user_deductions)
+
+        # Crear nuevas deducciones en batch
+        if user_deductions:
+            DeductionXuser.objects.bulk_create(user_deductions)
 
     def create_deduction_user(self, request, **kwargs):
         deduction_user_count = self.objects.all().count()
