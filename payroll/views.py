@@ -16,7 +16,7 @@ from helpers.utils import (
     dict_key_to_lower,
     simple_query_filter,
 )
-from payroll.models import Adjustment, Deductions, Payroll, PayrollEntry
+from payroll.models import Adjustment, Concept, Deductions, Payroll, PayrollEntry
 from payroll.serializers import (
     AdjustmentSerializer,
     DeductionSerializer,
@@ -408,6 +408,11 @@ class PayrollViewSet(BaseProtectedViewSet):
                 f"La entrada de nomina para el usuario '@{username}' no fue encontrada"
             )
 
+        concept = Concept.objects.filter(
+            name=dict(Adjustment.ADJUSTMENT_TYPE).get(data["type"])
+        ).first()
+
+        data["concept"] = concept
         data["payroll_entry"] = payroll_entry
 
         adjustment = Adjustment(**data)

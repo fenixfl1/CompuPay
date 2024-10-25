@@ -3,6 +3,7 @@ from django.contrib.auth import authenticate, get_user_model
 from django.forms.models import model_to_dict
 from django.db.models import Q, Max
 from django.core.exceptions import ObjectDoesNotExist
+from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
@@ -30,13 +31,10 @@ from users.models import (
     ActivityLog,
     Department,
     MenuOptions,
-    OperationsMeneOptions,
     Parameters,
-    PermissionsRoles,
     Roles,
     RolesUsers,
     User,
-    UserPermission,
 )
 from users.serializers import (
     AuthenticateUserSerializer,
@@ -189,6 +187,52 @@ class UserViewSet(ViewSet):
         user.save()
 
         return Response({"message": "Password changed successfully"})
+
+    @viewException
+    def check_username(self, request: Request):
+        """
+        This andpoint is used to check if an given username is available
+        `METHOD`: POST
+        """
+        data = dict_key_to_lower(request.data)
+        username = data.get("username", None)
+        if not username:
+            raise PayloadValidationError(
+                "USERNAME is required", status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if User.objects.filter(username=username).exists() is True:
+            return Response(
+                {"message": "El nombre de usuario ya esta en uso"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response(
+            {"message": "Nombre de usuario disponible."}, status=status.HTTP_200_OK
+        )
+
+    @viewException
+    def check_identity_document(self, request: Request):
+        """
+        This andpoint is used to check if an given identity document is available
+        `METHOD`: POST
+        """
+        data = dict_key_to_lower(request.data)
+        document = data.get("identity_document", None)
+        if not document:
+            raise PayloadValidationError(
+                "IDENTITY_DOCUMENT is required", status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if User.objects.filter(identity_document=document).exists() is True:
+            return Response(
+                {"message": "El documento de identidad digitada ya existe."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response(
+            {"message": "Documento de identidad disponible."}, status=status.HTTP_200_OK
+        )
 
     @viewException
     def get_list_users(self, request):
@@ -389,9 +433,14 @@ class UserViewSet(ViewSet):
                 if roles_users:
                     roles_users.update(state=RolesUsers.INACTIVE)
                 for role in roles:
-                    RolesUsers.create(
-                        request, user_id=user, rol_id=role, state=RolesUsers.ACTIVE
-                    )
+                    usr_role = RolesUsers.objects.get(Q(rol_id=role) & Q(user_id=user))
+                    if usr_role:
+                        usr_role.state = RolesUsers.ACTIVE
+                        usr_role.save()
+                    else:
+                        RolesUsers.create(
+                            request, user_id=user, rol_id=role, state=RolesUsers.ACTIVE
+                        )
             # pylint: disable=broad-except
             except Exception:
                 message = "User updated successfully. But an error occurred while assigning roles."
@@ -423,6 +472,23 @@ class UserViewSet(ViewSet):
             )
 
         return Response({"data": serializer.data, "message": message})
+
+    @viewException
+    def update_avatar(self, request: Request):
+        data = dict_key_to_lower(request.data)
+
+        username = data.get("username")
+        if not username:
+            raise PayloadValidationError("USERNAME is required")
+
+        user = User.objects.get(username=username)
+        if not user:
+            raise UserDoesNotExist("User not found.")
+
+        user.avatar = data.get("avatar", None)
+        user.save()
+
+        return Response({"message": "El avatar se actualizo con exito."})
 
     @viewException
     def change_user_rol(self, request):
@@ -464,7 +530,8 @@ class UserViewSet(ViewSet):
             user=request.user,
             action=1,
             message=f"""
-            @{request.user.username} cambio el rol {roles_users.rol_id.name} a {new_rol.rol_id.name} para el usuario @{new_rol.get_username()}""",
+            @{request.user.username} cambio el rol {roles_users.rol_id.name} a \
+                {new_rol.rol_id.name} para el usuario @{new_rol.get_username()}""",
         )
 
         return Response({"message": "Role change successfully."})
@@ -622,24 +689,13 @@ class MenuOptionsViewSet(ViewSet):
 
         user = User.objects.get(user_id=user_id)
 
-        user_permissions = UserPermission.objects.filter(
-            Q(user_id=user_id) & Q(state=UserPermission.ACTIVE)
-        ).values_list("id", flat=True)
-
-        opration_menu_options = OperationsMeneOptions.objects.filter(
-            Q(user_permission_id__in=user_permissions)
-            & Q(state=OperationsMeneOptions.ACTIVE)
-        ).values_list("menu_option_id", flat=True)
-
         menu_options = MenuOptions.objects.filter(
-            Q(
-                Q(menu_option_id__in=opration_menu_options)
-                | Q(menuoptonxroles__rol_id__in=roles)
-                | Q(userpermission__user_id=user)
-            )
+            Q(Q(menuoptonxroles__rol_id__in=roles) | Q(userpermission__user_id=user))
             & Q(state=MenuOptions.ACTIVE)
             & Q(parent_id__isnull=True)
         ).distinct()
 
-        serializer = MenuOptionsSerializer(menu_options, many=True)
+        serializer = MenuOptionsSerializer(
+            menu_options, many=True, context={"request": request}
+        )
         return Response({"data": serializer.data})
