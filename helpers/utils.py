@@ -13,6 +13,45 @@ from helpers.constants import (
 from helpers.exceptions import get_traceback
 
 
+def ordinal(number, language="es"):
+    def ordinal_en(n):
+        suffix = ["th", "st", "nd", "rd"] + ["th"] * 6
+        if 10 <= n % 100 <= 20:
+            suffix_index = 0
+        else:
+            suffix_index = min(n % 10, 4)
+        return f"{n}{suffix[suffix_index]}"
+
+    def ordinal_es(n):
+        if n == 1:
+            return f"{n}ra"
+        elif n == 3:
+            return f"{n}ra"
+        elif n == 2:
+            return f"{n}da"
+        elif n == 4:
+            return f"{n}ta"
+        elif n == 5:
+            return f"{n}ta"
+        else:
+            return f"{n}º"
+
+    if language == "en":
+        return ordinal_en(number)
+    elif language == "es":
+        return ordinal_es(number)
+    else:
+        raise ValueError(
+            "Unsupported language. Use 'en' for English or 'es' for Spanish."
+        )
+
+
+def list_values_to_lower(values: list | None) -> list | None:
+    if isinstance(values, list):
+        return [value.lower() for value in values]
+    return None
+
+
 def dict_key_to_lower(data: dict | list[dict]) -> dict | list[dict]:
     """
     This function is used to convert the key of the dictionary to lower case
@@ -172,3 +211,47 @@ def simple_query_filter(conditon: dict) -> Q:
     # build a condition like:
     # Q(user_id=1, username="admin", ...[any_field]=[any_value])
     return Q(**dict_key_to_lower(conditon))
+
+
+def get_month_day_name(int_value: int, opt: str) -> str:
+    """Returns the name of the month or day based on the given integer value.
+
+    Args:
+        int_value (int): The number of the month or day (e.g., 1 -> Monday or January).
+        opt (str): 'day' or 'month' to specify the type of name to return.
+
+    Returns:
+        str: The name of the month or day.
+    """
+    days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    months = [
+        "Enero",
+        "Febrero",
+        "Marzo",
+        "Abril",
+        "Mayo",
+        "Junio",
+        "Julio",
+        "Agosto",
+        "Septiembre",
+        "Octubre",
+        "Noviembre",
+        "Diciembre",
+    ]
+
+    if opt.lower() == "day":
+        if 1 <= int_value <= 7:
+            return days[int_value - 1]
+        else:
+            return "Invalid day number"
+    elif opt.lower() == "month":
+        if 1 <= int_value <= 12:
+            return months[int_value - 1]
+        else:
+            return "Invalid month number"
+    else:
+        return "Invalid option"
+
+
+def inrange(n, range1, range2) -> bool:
+    return range1[0] <= n <= range1[1] or range2[0] <= n <= range2[1]

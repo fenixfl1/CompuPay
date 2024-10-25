@@ -1,21 +1,21 @@
 from django.contrib import admin
 
 from helpers.admin import BaseModelAdmin
-from tasks.models import TagXTasks, Tags, Task
+from tasks.models import TagXTasks, Tags, Task, TaskXusers
 
 
 class TaskAdmin(BaseModelAdmin):
     list_display = (
         "task_id",
         "name",
-        "status",
+        "get_assigned_users",
+        "completed",
         "priority",
         "start_date",
         "end_date",
-        "assigned_user",
     )
-    search_fields = ("name", "status", "priority")
-    list_filter = ("status", "priority")
+    search_fields = ("name", "completed", "priority")
+    list_filter = ("completed", "priority")
 
 
 class TagsAdmin(BaseModelAdmin):
@@ -38,6 +38,15 @@ class TagXTasksAdmin(BaseModelAdmin):
     list_filter = ("task", "tag")
 
 
+class TaskxusersAdmin(BaseModelAdmin):
+    list_display = (
+        "task",
+        "user",
+    )
+    search_fields = ("task", "user")
+
+
 admin.site.register(Task, TaskAdmin)
 admin.site.register(Tags, TagsAdmin)
 admin.site.register(TagXTasks, TagXTasksAdmin)
+admin.site.register(TaskXusers, TaskxusersAdmin)

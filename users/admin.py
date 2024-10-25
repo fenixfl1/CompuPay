@@ -8,10 +8,14 @@ from users.forms import (
     UstomAuthForm,
 )
 from users.models import (
+    ActivityLog,
+    Department,
     MenuOptions,
+    MenuOptonXroles,
     Operations,
     OperationsMeneOptions,
     Parameters,
+    ParametesXmenuOptions,
     PermissionsRoles,
     Roles,
     RolesUsers,
@@ -32,17 +36,25 @@ class UserAdmin(BaseModelAdmin):
 
     ordering = ("user_id",)
     display_name = "username"
-    list_filter = ("is_staff", "is_superuser")
+    list_filter = ("is_staff", "is_superuser", "department")
     list_display = (
         "user_id",
         "render_avatar",
-        "get_full_name",
+        "full_name",
         "username",
         "get_roles_name",
         "email",
+        "department",
+        "salary",
         "is_staff",
         "is_superuser",
         "state",
+    )
+    list_editable = (
+        "department",
+        "is_staff",
+        "is_superuser",
+        "salary",
     )
 
     filter_horizontal = ()
@@ -84,6 +96,7 @@ class UserAdmin(BaseModelAdmin):
 
 class MenuOptionAdmin(BaseModelAdmin):
     list_display = (
+        "menu_option_id",
         "order",
         "normalize_icon",
         "name",
@@ -94,6 +107,31 @@ class MenuOptionAdmin(BaseModelAdmin):
     )
     list_filter = ("state",)
     exclude = ("menu_option_id",)
+
+    def save_model(self, request, obj, form, change):
+        # Sobrescribimos el menu_option_id si no está presente
+        if not obj.menu_option_id:
+            if obj.parent_id:
+                # Si tiene un padre, genera un ID basado en el ID del padre y un número secuencial
+                parent_id = obj.parent_id.menu_option_id
+                count_siblings = (
+                    MenuOptions.objects.filter(parent_id=obj.parent_id).count() + 1
+                )
+                obj.menu_option_id = f"{parent_id}-{count_siblings}"
+            else:
+                # Si no tiene padre, genera un ID secuencial
+                count_options = (
+                    MenuOptions.objects.filter(parent_id__isnull=True).count() + 1
+                )
+                obj.menu_option_id = str(count_options)
+
+        # Llamamos al método save_model original para guardar el objeto
+        super().save_model(request, obj, form, change)
+
+
+class PermissionsRolesAdmin(BaseModelAdmin):
+    list_display = ("operation_id", "rol_id")
+    list_filter = ("state",)
 
 
 class PermissionsRolesInline(BaseModelInline):
@@ -167,6 +205,44 @@ class ParametesAdmin(BaseModelAdmin):
     list_filter = ("state",)
 
 
+class ParametesXmenuOptionsAdmin(BaseModelAdmin):
+    list_display = (
+        "parameter_id",
+        "option_id",
+    )
+    list_filter = ("state",)
+
+
+class DepartmentAdmin(BaseModelAdmin):
+    list_display = (
+        "department_id",
+        "name",
+        "description",
+    )
+    list_filter = ("state",)
+
+
+class MenuOptionXrolesAdmin(BaseModelAdmin):
+    list_display = (
+        "get_rol_name",
+        "get_option_name",
+    )
+    list_filter = ("state", "rol_id")
+
+
+class ActivityLogAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "action_time",
+        "object_repr",
+        "get_action_flag_display",
+        "content_type_id",
+        "username",
+        "change_message",
+    ]
+    list_filter = ["username"]
+
+
 admin.site.register(User, UserAdmin)
 admin.site.register(MenuOptions, MenuOptionAdmin)
 admin.site.register(Roles, RolesAdmin)
@@ -175,3 +251,8 @@ admin.site.register(UserPermission, UserPermissionAdmin)
 admin.site.register(OperationsMeneOptions, OperationsMeneOptionsAdmin)
 admin.site.register(RolesUsers, RolesUserAdmin)
 admin.site.register(Parameters, ParametesAdmin)
+admin.site.register(ParametesXmenuOptions, ParametesXmenuOptionsAdmin)
+admin.site.register(Department, DepartmentAdmin)
+admin.site.register(PermissionsRoles, PermissionsRolesAdmin)
+admin.site.register(MenuOptonXroles, MenuOptionXrolesAdmin)
+admin.site.register(ActivityLog, ActivityLogAdmin)

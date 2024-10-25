@@ -1,9 +1,14 @@
 from datetime import datetime
+
 from django.db import models
+from django.db.models import Max, Q, Manager
 from django.forms import ValidationError
 from django.utils import timezone
 from django.utils.html import format_html
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+
 from rest_framework.exceptions import APIException
 from rest_framework.request import Request
 
@@ -37,10 +42,10 @@ class UserManager(BaseUserManager):
 
             roles = extra_fields.pop("roles", None)
 
-            users_count = self.all().count()
+            max_user_id = self.all().aggregate(Max("user_id"))["user_id__max"]
 
             user = self.model(
-                user_id=users_count + 1,
+                user_id=max_user_id + 1,
                 name=name,
                 last_name=last_name,
                 email=email,
@@ -53,27 +58,27 @@ class UserManager(BaseUserManager):
             user.set_password(password)
             user.save(using=self._db)
 
-            if roles is not None:
-                try:
+            max_user_role_id = RolesUsers.objects.all().aggregate(Max("id"))["id__max"]
+            try:
+                if roles is not None:
                     roles_users = []
                     roles = Roles.objects.filter(rol_id__in=roles)
 
                     for role in roles:
-                        roles_user_count = RolesUsers.objects.all().count()
                         roles_users.append(
                             RolesUsers(
                                 rol_id=role,
                                 user_id=user,
                                 created_by=created_by,
-                                pk=roles_user_count + 2,
+                                pk=max_user_role_id + 1,
                                 state="A",
                             )
                         )
 
-                    RolesUsers.objects.bulk_create(roles_users)
-                except Exception as e:
-                    user.delete()
-                    raise APIException(str(e)) from e
+                RolesUsers.objects.bulk_create(roles_users)
+            except Exception as e:
+                user.delete()
+                raise APIException(str(e)) from e
 
             return user
         except Exception as e:
@@ -108,11 +113,7 @@ class User(AbstractBaseUser):
     STATE_CHOICES = (
         ("A", "Activo"),
         ("I", "Inactivo"),
-        ("D", "Despidido"),
-        ("R", "Renunciado"),
         ("P", "Pendiente"),
-        ("E", "Evaluado"),
-        ("J", "Rechazado"),
     )
 
     user_id = models.AutoField(primary_key=True)
@@ -187,6 +188,15 @@ class User(AbstractBaseUser):
         through_fields=("user_id", "rol_id"),
         related_name="%(class)s_roles",
     )
+    department = models.ForeignKey(
+        "Department",
+        on_delete=models.CASCADE,
+        to_field="department_id",
+        related_name="%(class)s_department",
+        null=True,
+        blank=True,
+        db_column="department_id",
+    )
 
     objects = UserManager()
 
@@ -195,6 +205,7 @@ class User(AbstractBaseUser):
 
     ACTIVE = "A"
     INACTIVE = "I"
+    INTERN = "P"
 
     REQUIRED_FIELDS = [
         "identity_document",
@@ -219,10 +230,16 @@ class User(AbstractBaseUser):
         return f"@{self.username}"
 
     def has_perm(self, _app_label: str) -> bool:
-        return self.is_staff or self.is_superuser
+        return self.is_staff and self.is_superuser
 
     def has_module_perms(self, _app_label: str) -> bool:
-        return self.is_staff or self.is_superuser
+        return self.has_perm(_app_label)
+
+    @staticmethod
+    def get_employees() -> Manager["User"]:
+        return User.objects.filter(
+            Q(state=User.ACTIVE) & Q(is_staff=True) & Q(salary__gt=0)
+        )
 
     @classmethod
     def update_user(cls, request: Request, user_id: int, **kwargs) -> "User":
@@ -237,8 +254,11 @@ class User(AbstractBaseUser):
         except UserDoesNotExist as e:
             raise APIException(e.message) from e
 
-    def get_full_name(self) -> str:
+    def full_name(self) -> str:
         return f"{self.name} {self.last_name}"
+
+    def get_avatar(self) -> str:
+        return self.avatar if self.avatar else f"{self.username}"[:2].upper()
 
     def get_roles_name(self) -> str:
         roles = RolesUsers.objects.filter(user_id=self, state=self.ACTIVE).values_list(
@@ -255,7 +275,7 @@ class User(AbstractBaseUser):
         return ""
 
     render_avatar.short_description = "Avatar"
-    get_full_name.short_description = "Name"
+    full_name.short_description = "Name"
     get_roles_name.short_description = "Roles"
 
     class Meta:
@@ -416,7 +436,16 @@ class Roles(BaseUsersModels):
 
     def render_color(self):
         return format_html(
-            f'<span style="padding: 5px; border-radius: 5px; background-color: {self.color}; font-weight: bold; height: 50px;width: 100px;min-width: 180px">{self.color}</span>'
+            f"""<span
+                style="
+                    padding: 5px; 
+                    border-radius: 5px; 
+                    background-color: {self.color};
+                    font-weight: bold; 
+                    height: 50px;
+                    width: 100px;
+                    min-width: 180px"
+                >{self.color}</span>"""
         )
 
     render_color.short_description = "Color"
@@ -462,12 +491,12 @@ class RolesUsers(BaseUsersModels):
 
 class MenuOptions(BaseUsersModels):
     """
-    This model represents the menu options.\n
+    This model represents the menu options.
     `TABLE NAME`: MENU_OPTIONS
     """
 
     menu_option_id = models.CharField(
-        primary_key=True, null=False, blank=False, max_length=10
+        primary_key=True, null=False, blank=False, max_length=10, unique=True
     )
     name = models.CharField(max_length=100, null=False, blank=False)
     description = models.CharField(max_length=250, null=True, blank=True)
@@ -476,7 +505,7 @@ class MenuOptions(BaseUsersModels):
         max_length=10,
         null=True,
         blank=True,
-        choices=[("group", "Group"), ("divider", "Divider")],
+        choices=[("group", "Group"), ("divider", "Divider"), ("link", "Link")],
     )
     icon = models.TextField(null=True, blank=True)
     parent_id = models.ForeignKey(
@@ -490,6 +519,13 @@ class MenuOptions(BaseUsersModels):
     )
     order = models.IntegerField(null=False, blank=False)
     parameters = models.ManyToManyField("Parameters", blank=True)
+    roles = models.ManyToManyField(
+        Roles,
+        through="MenuOptonXroles",
+        through_fields=("option_id", "rol_id"),
+        related_name="%(class)s_roles",
+    )
+    content = models.TextField(null=True, blank=True)
 
     REQUIRED_FIELDS = [
         "description",
@@ -502,6 +538,25 @@ class MenuOptions(BaseUsersModels):
         "parent_id",
         "state",
     ]
+
+    def save(self, *args, **kwargs):
+        # Generar el menu_option_id personalizado si no existe
+        if not self.menu_option_id:
+            if self.parent_id:
+                # Si tiene un padre, genera un ID basado en el ID del padre y un número secuencial
+                parent_id = self.parent_id.menu_option_id
+                count_siblings = (
+                    MenuOptions.objects.filter(parent_id=self.parent_id).count() + 1
+                )
+                self.menu_option_id = f"{parent_id}-{count_siblings}"
+            else:
+                # Si no tiene padre, genera un ID secuencial
+                count_options = (
+                    MenuOptions.objects.filter(parent_id__isnull=True).count() + 1
+                )
+                self.menu_option_id = str(count_options)
+
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.name}. {self.description}"
@@ -529,7 +584,7 @@ class MenuOptions(BaseUsersModels):
                 raise ValidationError(
                     f"Order {self.order} already exists for the given parent_id."
                 )
-            if not 0 <= self.order < len(siblings) + 1:
+            if not 0 <= int(self.order or 0) < len(siblings) + 1:
                 raise ValidationError(
                     f"Order must be between 0 and {len(siblings)} for the given parent_id."
                 )
@@ -542,6 +597,45 @@ class MenuOptions(BaseUsersModels):
         constraints = [
             models.UniqueConstraint(
                 fields=["parent_id", "order"], name="unique_order_per_parent"
+            )
+        ]
+
+
+class MenuOptonXroles(BaseUsersModels):
+    """
+    This model represents the relationship between Menu Options and Roles.
+    `TABLE NAME`: MENU_OPTIONS_X_ROLES
+    """
+
+    option_id = models.ForeignKey(
+        MenuOptions, on_delete=models.CASCADE, null=False, db_column="option_id"
+    )
+    rol_id = models.ForeignKey(
+        Roles, on_delete=models.CASCADE, null=False, db_column="rol_id"
+    )
+
+    def __str__(self) -> str:
+        return f"Menu Option: {self.option_id}, Role: {self.rol_id}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.option_id!r})"
+
+    def get_rol_name(self):
+        return self.rol_id.name
+
+    def get_option_name(self):
+        return self.option_id.name
+
+    get_rol_name.short_description = "Role"
+    get_option_name.short_description = "Menu Option"
+
+    class Meta:
+        db_table = "MENU_OPTIONS_X_ROLES"
+        verbose_name = "Opción de menú por rol"
+        verbose_name_plural = "Opciones de menú por roles"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["option_id", "rol_id"], name="pk_option_rol"
             )
         ]
 
@@ -674,6 +768,8 @@ class PermissionsRoles(BaseUsersModels):
     def __str__(self) -> str:
         return f"Operation: {self.operation_id}, Role: {self.rol_id}"
 
+    def clean(self): ...
+
     class Meta:
         db_table = "PERMISSIONS_X_ROLES"
         verbose_name = "Permisio por rol"
@@ -702,3 +798,125 @@ class Parameters(BaseUsersModels):
         verbose_name = "Parametro"
         verbose_name_plural = "Parametros"
         ordering = ["parameter_id"]
+
+
+class ParametesXmenuOptions(BaseUsersModels):
+    """
+    This model represents the relationship between Parameters and Menu Options.\n
+    `TABLE NAME`: PARAMETERS_X_MENU_OPTIONS
+    """
+
+    parameter_id = models.ForeignKey(
+        Parameters, on_delete=models.CASCADE, null=False, db_column="parameter_id"
+    )
+    option_id = models.ForeignKey(
+        MenuOptions, on_delete=models.CASCADE, null=False, db_column="option_id"
+    )
+
+    def __str__(self) -> str:
+        return f"Parameter: {self.parameter_id}, Menu Option: {self.option_id}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.parameter_id!r})"
+
+    class Meta:
+        db_table = "PARAMETERS_X_MENU_OPTIONS"
+        verbose_name = "Parametro por Opción de Menú"
+        verbose_name_plural = "Parametros por Opciones de Menú"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["parameter_id", "option_id"], name="pk_parameter_menu_option"
+            )
+        ]
+
+
+class Department(BaseUsersModels):
+    """
+    This model represents the departments.\n
+    `TABLE NAME`: DEPARTMENTS
+    """
+
+    department_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=50, null=False, blank=False, unique=True)
+    description = models.CharField(max_length=250, null=True, blank=True)
+    color = models.CharField(max_length=8, null=True, blank=True)
+
+    REQUIRED_FIELDS = ["name", "created_by", "state"]
+    ALLOWED_FIELDS = REQUIRED_FIELDS + ["description"]
+
+    def __str__(self) -> str:
+        return f"{self.name}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.name!r})"
+
+    def get_employees_count(self) -> int:
+        return User.objects.filter(
+            Q(state=User.ACTIVE) & Q(is_staff=True) & Q(department=self)
+        ).count()
+
+    class Meta:
+        db_table = "DEPARTMENTS"
+        verbose_name = "Departamento"
+        verbose_name_plural = "Departamentos"
+        ordering = ["department_id"]
+
+
+class ActivityLog(models.Model):
+    ACTION_CHOICES = (
+        (1, "Create"),
+        (2, "Update"),
+        (3, "Delete"),
+    )
+
+    action_time = models.DateTimeField(auto_now_add=True)
+    username = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="%(class)s_username",
+        db_column="username",
+        to_field="username",
+    )
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="%(class)s_content_type",
+    )
+    object_id = models.TextField(null=True, blank=True)
+    object_repr = models.CharField(max_length=200)
+    action_flag = models.PositiveSmallIntegerField(choices=ACTION_CHOICES)
+    change_message = models.TextField(blank=True)
+    related_object = GenericForeignKey("content_type", "object_id")
+
+    objects = ModelManager
+
+    class Meta:
+        db_table = "ACTIVITY_LOG"
+        verbose_name = "Actividades Recientes"
+        ordering = ["-id"]
+
+    def __str__(self):
+        return (
+            f"{self.get_action_flag_display()} - {self.object_repr} por {self.username}"
+        )
+
+    def get_action_flag_display(self) -> str:
+        return dict(self.ACTION_CHOICES).get(self.action_flag, "")
+
+    get_action_flag_display.short_description = "Action"
+
+    @classmethod
+    def register_activity(cls, instance, user, action, message):
+        activity = ActivityLog.objects.create(
+            username=user,
+            content_type=ContentType.objects.get_for_model(instance),
+            object_id=instance.pk,
+            object_repr=str(instance),
+            change_message=message,
+            action_flag=action,
+        )
+
+        activity.save()

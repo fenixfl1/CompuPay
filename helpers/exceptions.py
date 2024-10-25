@@ -1,7 +1,16 @@
 import traceback
+from functools import wraps
 from django.forms import ValidationError
+from django.core.exceptions import FieldError, ObjectDoesNotExist
 from rest_framework.exceptions import APIException
 from rest_framework.response import Response
+
+
+def get_traceback():
+    print("*" * 75)
+    print(f"traceback: {traceback.format_exc()}")
+    print("*" * 75)
+    return traceback.format_exc()
 
 
 class CustomBaseException(Exception):
@@ -57,36 +66,58 @@ class CustomValidationError(ValidationError):
         self.code = code or e_code
 
 
-def get_traceback():
-    print("*" * 75)
-    print(f"traceback: {traceback.format_exc()}")
-    print("*" * 75)
-    return traceback.format_exc()
+class PayloadValidationError(APIException):
+    """
+    PayloadValidationError is a class that inherits from APIException
+    and is used to raise exceptions related to payload validation.
+    """
+
+    def __init__(self, message, code=None, status_code=400):
+        super().__init__(message, code)
+        self.message = message
+        self.code = code or "PayloadValidationError"
+        self.status_code = status_code
 
 
 def viewException(func):
+    @wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except APIException as e:
-            return Response(
-                {"error": str(e), "code": e.get_codes()}, status=e.status_code or 500
+        except (
+            PayloadValidationError,
+            APIException,
+            TypeError,
+            AttributeError,
+            ValueError,
+            ValidationError,
+            FieldError,
+            ObjectDoesNotExist,
+        ) as e:
+            error_code = getattr(e, "code", e.__class__.__name__)
+            status_code = getattr(
+                e,
+                "status_code",
+                (
+                    400
+                    if isinstance(
+                        e,
+                        (
+                            TypeError,
+                            AttributeError,
+                            ValueError,
+                            ValidationError,
+                            FieldError,
+                        ),
+                    )
+                    else 500
+                ),
             )
-        except TypeError as e:
             get_traceback()
-            return Response({"error": str(e), "code": "TypeError"}, status=400)
-        except AttributeError as e:
-            get_traceback()
-            return Response({"error": str(e), "code": "AttributeError"}, status=400)
-        except ValueError as e:
-            return Response({"error": str(e), "code": "ValueError"}, status=400)
-        except ValidationError as e:
-            return Response(
-                {"error": str(e), "code": e.code or "ValidationError"}, status=400
-            )
+            return Response({"error": str(e), "code": error_code}, status=status_code)
         # pylint: disable=broad-except
         except Exception as e:
-            # pylint: disable=no-member
-            return Response({"error": str(e), "code": e.code}, status=500)
+            get_traceback()
+            return Response({"error": str(e), "code": e.__class__.__name__}, status=500)
 
     return wrapper

@@ -25,15 +25,10 @@ class BaseModelSerializer(serializers.ModelSerializer):
         return result
 
     def is_valid(self, *, raise_exception=False):
-        """
-        Customise the is_valid method to return a custom error message.
-        """
         try:
             return super().is_valid(raise_exception=raise_exception)
         except serializers.ValidationError as exc:
-            raise serializers.ValidationError(
-                {"error": exc.detail}, code=exc.status_code
-            )
+            raise serializers.ValidationError(exc.detail, code=exc.status_code)
 
 
 class PaginationSerializer(PageNumberPagination):
@@ -106,3 +101,56 @@ class PaginationSerializer(PageNumberPagination):
             )
         except APIException as exc:
             return Response({"error": str(exc)}, status=500)
+
+
+class DynamicSerializer(serializers.ModelSerializer):
+    """
+    This is a dynamic serializer that allows you to pass fields and exclude fields dynamically.
+    It accepts the model, fields, and exclude as arguments.
+    """
+
+    def __init__(self, *args, model=None, fields=None, exclude=None, **kwargs):
+        # Crear una clase Meta dinámicamente
+        class Meta:
+            pass
+
+        # Asignar el modelo, fields y exclude a la clase Meta
+        Meta.model = model
+        Meta.fields = fields if fields is not None else "__all__"
+        Meta.exclude = exclude
+
+        # Asignar la clase Meta al serializer
+        self.Meta = Meta
+
+        # Llamar al constructor de la clase base
+        super(DynamicSerializer, self).__init__(*args, **kwargs)
+
+    def to_representation(self, instance):
+        """
+        Convert all dictionary keys to uppercase for frontend readability.
+        """
+        ret = super().to_representation(instance)
+        result = {k.upper(): v for k, v in ret.items()}
+
+        return result
+
+    def is_valid(self, *, raise_exception=False):
+        """
+        Customise the is_valid method to return a custom error message.
+        """
+        try:
+            return super().is_valid(raise_exception=raise_exception)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError(
+                {"error": exc.detail}, code=exc.status_code
+            )
+
+
+class BaseSerializer(serializers.Serializer):
+    """
+    Base model for serializers that inherit from
+    the `Serialzar` class of `rest_framework.serializers.Serializer`
+    """
+
+    def create(self, validated_data): ...
+    def update(self, instance, validated_data): ...
