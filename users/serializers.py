@@ -1,13 +1,13 @@
 from rest_framework import serializers
+from rest_framework.request import Request
 from django.db.models import Q
 
 from helpers.serializers import BaseModelSerializer
 from payroll.models import DeductionXuser
 from users.models import (
-    Department,
     MenuOptions,
-    OperationsMeneOptions,
     Parameters,
+    PermissionsRoles,
     Roles,
     RolesUsers,
     User,
@@ -193,16 +193,21 @@ class MenuOptionsSerializer(BaseModelSerializer):
         options = MenuOptions.objects.filter(parent_id=instance.menu_option_id).all()
         return MenuOptionsSerializer(options, many=True).data or None
 
+    # This function should be on a dedicated endpoint
     def get_operations(self, instance: MenuOptions):
-        operations_mene_options = OperationsMeneOptions.objects.filter(
-            menu_option_id=instance.menu_option_id
-        )
-        user_permissions = [
-            operation.user_permission_id for operation in operations_mene_options
-        ]
+        request: Request = self.context.get("request")
+        user = User.objects.get(pk=request.user.user_id)
 
-        operations = UserPermissionSerializer(user_permissions, many=True).data
-        return [operation["OPERATION_ID"] for operation in operations]
+        rol_permissions = PermissionsRoles.objects.filter(
+            rol_id__in=user.roles.all()
+        ).values_list("operation_id", flat=True)
+
+        user_permissions = UserPermission.objects.filter(
+            Q(user_id=user) & Q(menu_options=instance)
+        ).values_list("operation_id", flat=True)
+
+        operations = list(set(rol_permissions) | set(user_permissions))
+        return operations
 
     def to_representation(self, instance):
         return serializers.ModelSerializer.to_representation(self, instance)

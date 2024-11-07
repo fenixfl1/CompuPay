@@ -28,7 +28,7 @@ from helpers.utils import (
     dict_key_to_lower,
 )
 from helpers.constants import colors
-from payroll.models import PayrollPaymentDetail
+from payroll.models import Payroll, PayrollPaymentDetail
 from tasks.models import Task
 from users.models import ActivityLog, Department, User
 
@@ -210,12 +210,10 @@ class DashboardViewSet(BaseProtectedViewSet):
     @viewException
     def get_payroll_payment_detail(self, _request: Request):
         payroll_details = (
-            PayrollPaymentDetail.objects.annotate(
-                month=TruncMonth("payroll__period_end")
-            )
-            .values("month", "concept__name")
+            PayrollPaymentDetail.objects.annotate(period_alias=F("payroll__period"))
+            .values("period_alias", "concept__name", "payroll_id")
             .annotate(total_amount=Sum("concept_amount"))
-            .order_by("month")
+            .order_by("payroll_id")
         )
 
         all_concepts = (
@@ -228,19 +226,25 @@ class DashboardViewSet(BaseProtectedViewSet):
 
         result = {}
         for detail in payroll_details:
-            month = detail["month"].strftime("%B")
+            payroll = Payroll.objects.get(payroll_id=detail["payroll_id"])
+            period_representation = str(payroll)
+
             concept_name = detail["concept__name"]
             total_amount = detail["total_amount"]
 
-            if month not in result:
-                result[month] = {"month": month}
+            if period_representation not in result:
+                result[period_representation] = {"period": period_representation}
 
-            result[month][concept_name] = total_amount
+            result[period_representation][concept_name] = total_amount
 
-        for month_data in result.values():
+        # Reorganizar 'SALARIO' al final
+        for period_data in result.values():
+            salary = period_data.pop("SALARIO", None)  # Extrae 'SALARIO'
             for concept in concept_list:
-                if concept not in month_data:
-                    month_data[concept] = 0.0
+                if concept not in period_data:
+                    period_data[concept] = 0.0
+            if salary is not None:
+                period_data["SALARIO"] = salary  # Añade 'SALARIO' al final
 
         available_colors = colors.copy()
         random.shuffle(available_colors)

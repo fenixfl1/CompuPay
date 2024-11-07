@@ -38,6 +38,8 @@ class PayrollInfoSerializer(BaseModelSerializer):
             "next_payment",
             "current_period",
             "payroll_config",
+            "period_start",
+            "period_end",
         )
 
 
@@ -139,6 +141,10 @@ class PayrollHistorySerializer(BaseModelSerializer):
     period = serializers.SerializerMethodField()
     entries = serializers.SerializerMethodField()
     desc_state = serializers.SerializerMethodField()
+    calc_deductions = serializers.SerializerMethodField()
+
+    def get_calc_deductions(self, instance: Payroll):
+        return instance.period == instance.get_config().periods
 
     def get_desc_state(self, instance: Payroll):
         labels = dict(Payroll.STATUS_CHOICES)

@@ -39,6 +39,8 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+DJANGO_ALLOW_ASYNC_UNSAFE = True
+
 # Application definition
 
 INSTALLED_APPS = [

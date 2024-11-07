@@ -15,7 +15,7 @@ from payroll.models import (
 
 
 class PayrollAdmin(BaseModelAdmin):
-    # form = PayrollForm
+    form = PayrollForm
 
     list_display = ("payroll_id", "period_start", "period_end", "status")
     search_fields = ("name", "state")
@@ -53,11 +53,25 @@ class DeductionXuserAdmin(BaseModelAdmin):
         "deduction",
     )
     search_fields = ("user", "deduction")
+    list_filter = (
+        "state",
+        "user",
+        "deduction",
+    )
 
 
 class AdjustmentAdmin(BaseModelAdmin):
-    list_display = ("adjustment_id", "payroll_entry", "amount", "description", "type")
+    list_display = (
+        "adjustment_id",
+        "payroll_entry",
+        "amount",
+        "description",
+        "type",
+        "concept",
+    )
     search_fields = ("payroll_entry", "amount", "description")
+    list_filter = ("payroll_entry__payroll",)
+    list_editable = ("concept",)
 
 
 class ConceptsAdmin(BaseModelAdmin):

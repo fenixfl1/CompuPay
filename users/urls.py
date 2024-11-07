@@ -23,6 +23,9 @@ remove_role = views.UserViewSet.as_view({"put": "remove_role"})
 get_roles_list = views.UserViewSet.as_view({"post": "get_roles_list"})
 change_password = views.UserViewSet.as_view({"put": "change_password"})
 get_department_list = views.UserViewSet.as_view({"post": "get_department_list"})
+check_username = views.UserViewSet.as_view({"post": "check_username"})
+check_identity_document = views.UserViewSet.as_view({"post": "check_identity_document"})
+update_avatar = views.UserViewSet.as_view({"put": "update_avatar"})
 
 
 urlpatterns = [
@@ -41,6 +44,9 @@ urlpatterns = [
     path(f"{BASE_PATH_USERS}remove_role/", remove_role),
     path(f"{BASE_PATH_USERS}get_roles_list", get_roles_list),
     path(f"{BASE_PATH_USERS}get_department_list/", get_department_list),
+    path(f"{BASE_PATH_USERS}check_username/", check_username),
+    path(f"{BASE_PATH_USERS}check_identity_document/", check_identity_document),
+    path(f"{BASE_PATH_USERS}update_avatar/", update_avatar),
 ]
 
 urlpatterns = format_suffix_patterns(urlpatterns)

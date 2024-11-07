@@ -130,7 +130,9 @@ class TaskXusers(BaseModels):
         task_users = []
         task_users_to_update = []
 
+        count = TaskXusers.objects.all().count()
         for user in users:
+            count += 1
             # Verifica si el usuario ya está asignado a la tarea
             task_user = TaskXusers.objects.filter(task=task, user=user).first()
 
@@ -143,6 +145,7 @@ class TaskXusers(BaseModels):
                 # Si no está asignado, crea una nueva relación
                 task_users.append(
                     TaskXusers(
+                        id=count,
                         task=task,
                         user=user,
                         created_by=task.created_by,
@@ -165,7 +168,7 @@ class TaskXusers(BaseModels):
             cls.objects.bulk_update(task_users, [{"state": TaskXusers.INACTIVE}])
             return True
         # pylint: disable=broad-except
-        except Exception as e:
+        except Exception:
             return False
 
     class Meta:

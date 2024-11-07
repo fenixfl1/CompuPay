@@ -42,6 +42,7 @@ class UserAdmin(BaseModelAdmin):
         "render_avatar",
         "full_name",
         "username",
+        "identity_document",
         "get_roles_name",
         "email",
         "department",
