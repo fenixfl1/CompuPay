@@ -1,13 +1,16 @@
 from rest_framework import serializers
+from rest_framework.request import Request
 from django.db.models import Q
 
-from helpers.serializers import BaseModelSerializer
+from helpers.serializers import BaseModelSerializer, DynamicFieldsModelSerializer
 from payroll.models import DeductionXuser
 from users.models import (
-    Department,
     MenuOptions,
+    Operations,
     OperationsMeneOptions,
     Parameters,
+    ParametesXmenuOptions,
+    PermissionsRoles,
     Roles,
     RolesUsers,
     User,
@@ -181,28 +184,79 @@ class MenuOptionsSerializer(BaseModelSerializer):
     operations = serializers.SerializerMethodField()
     parameters = serializers.SerializerMethodField()
 
+    def get_children(self, instance: MenuOptions):
+        request: Request = self.context.get("request", None)
+        user: User = request.user
+        roles = user.roles.all().values_list("rol_id", flat=True)
+
+        user_permissions = UserPermission.objects.filter(
+            Q(user_id=user.user_id) & Q(state=UserPermission.ACTIVE)
+        ).values_list("id", flat=True)
+
+        opration_menu_options = OperationsMeneOptions.objects.filter(
+            Q(user_permission_id__in=user_permissions)
+            & Q(state=OperationsMeneOptions.ACTIVE)
+        ).values_list("menu_option_id", flat=True)
+
+        menu_options = MenuOptions.objects.filter(
+            Q(
+                Q(menu_option_id__in=opration_menu_options)
+                | Q(menuoptonxroles__rol_id__in=roles)
+                | Q(userpermission__user_id=user)
+            )
+            & Q(state=MenuOptions.ACTIVE)
+            & Q(parent_id=instance.menu_option_id)
+        ).distinct()
+
+        return (
+            MenuOptionsSerializer(
+                menu_options,
+                many=True,
+                context={"request": self.context.get("request", None)},
+            ).data
+            or None
+        )
+
     def get_parameters(self, instance: MenuOptions):
-        parameters = instance.parameters.all()
+        childrens = MenuOptions.objects.filter(parent_id=instance.menu_option_id)
+        if childrens:
+            return None
+        params_x_menu = ParametesXmenuOptions.objects.filter(
+            Q(option_id=instance.menu_option_id) & Q(state=ParametesXmenuOptions.ACTIVE)
+        ).values_list("parameter_id", flat=True)
+        parameters = Parameters.objects.filter(parameter_id__in=params_x_menu)
         serializer = ParametersSerializer(parameters, many=True)
         output = {}
+
         for parameter in serializer.data:
             output[parameter["NAME"]] = parameter["VALUE"]
         return output
 
-    def get_children(self, instance: MenuOptions):
-        options = MenuOptions.objects.filter(parent_id=instance.menu_option_id).all()
-        return MenuOptionsSerializer(options, many=True).data or None
+    def get_operations(self, instance: MenuOptions | dict):
 
-    def get_operations(self, instance: MenuOptions):
         operations_mene_options = OperationsMeneOptions.objects.filter(
             menu_option_id=instance.menu_option_id
-        )
-        user_permissions = [
-            operation.user_permission_id for operation in operations_mene_options
-        ]
+        ).values_list("user_permission_id__operation_id__operation_id", flat=True)
 
-        operations = UserPermissionSerializer(user_permissions, many=True).data
-        return [operation["OPERATION_ID"] for operation in operations]
+        request: Request = self.context.get("request", None)
+
+        roles_id = []
+        if request:
+            roles_id = User.get_user_roles(request.user.username).values_list(
+                "rol_id", flat=True
+            )
+
+        operation_x_rol = PermissionsRoles.objects.filter(
+            Q(state=PermissionsRoles.ACTIVE) & Q(rol_id__in=roles_id)
+        ).values_list("operation_id__operation_id", flat=True)
+
+        operation_ids = set(operation_x_rol).union(operations_mene_options)
+
+        operations = Operations.objects.filter(
+            Q(operation_id__in=operation_ids) & Q(state=Operations.ACTIVE)
+        ).values_list("operation_id", flat=True)
+
+        return operations
 
     def to_representation(self, instance):
         return serializers.ModelSerializer.to_representation(self, instance)
@@ -230,4 +284,11 @@ class ParametersSerializer(BaseModelSerializer):
 
     class Meta:
         model = Parameters
+        fields = "__all__"
+
+
+class UserReportSerializer(DynamicFieldsModelSerializer):
+
+    class Meta:
+        model = User
         fields = "__all__"

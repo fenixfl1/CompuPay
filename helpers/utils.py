@@ -1,6 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from django.db.models import Q
 from django.forms import ValidationError
+from django.utils import timezone
 from rest_framework.exceptions import APIException
 
 from helpers.constants import (
@@ -59,14 +61,16 @@ def dict_key_to_lower(data: dict | list[dict]) -> dict | list[dict]:
     try:
         if not isinstance(data, (dict, list)):
             raise APIException(
-                f"Invalid data type. Expected 'dict' or 'list[dict]' but got '{type(data)}'"
+                f"Invalid data type. Expected 'dict' or 'list[dict]' but got '{
+                    type(data)}'"
             )
         if isinstance(data, dict):
             return {k.lower(): v for k, v in data.items()}
         elif isinstance(data, list):
             return [{k.lower(): v for k, v in item.items()} for item in data]
     except Exception as e:
-        raise APIException(f"{e}. Raised in 'dict_key_to_lower()' function", 500) from e
+        raise APIException(
+            f"{e}. Raised in 'dict_key_to_lower()' function", 500) from e
 
 
 def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
@@ -125,21 +129,25 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
 
         if operator not in operator_map:
             raise APIException(
-                f"Invalid operator: {operator}. Supported operators are: {operator_map.keys()}"
+                f"Invalid operator: {operator}. Supported operators are: {
+                    operator_map.keys()}"
             )
         if data_type not in data_type_map:
             raise APIException(
-                f"Invalid data type: {data_type}. Supported data types are: {data_type_map.keys()}"
+                f"Invalid data type: {data_type}. Supported data types are: {
+                    data_type_map.keys()}"
             )
 
         if operator == "IS NULL" and data_type != "bool":
             raise APIException(
-                f"Invalid condition for operator 'IS NULL'. Expected a boolean value but got '{data_type}'"
+                f"Invalid condition for operator 'IS NULL'. Expected a boolean value but got '{
+                    data_type}'"
             )
 
         if operator in ["IN", "NOT IN", "BETWEEN"] and not isinstance(value, list):
             raise APIException(
-                f"Invalid value for operator '{operator}'. Expected a list but got '{type(value)}'"
+                f"Invalid value for operator '{
+                    operator}'. Expected a list but got '{type(value)}'"
             )
 
         match data_type:
@@ -161,7 +169,8 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
             case "bool":
                 try:
                     if not isinstance(value, bool):
-                        raise ValueError(f"Invalid boolean format for field '{field}'")
+                        raise ValueError(
+                            f"Invalid boolean format for field '{field}'")
                     value = bool(value)
                 except Exception as exc:
                     raise APIException(
@@ -171,10 +180,12 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
                 try:
                     if not isinstance(value, list):
                         raise ValueError(
-                            MSG_INVALID_VALUE % {"data_type": "list", "field": field}
+                            MSG_INVALID_VALUE % {
+                                "data_type": "list", "field": field}
                         )
                     if operator not in ["IN", "NOT IN", "BETWEEN"]:
-                        raise ValueError(MSG_INVALID_OPERATOR_FOR_LIST % operator)
+                        raise ValueError(
+                            MSG_INVALID_OPERATOR_FOR_LIST % operator)
                 except ValueError as exc:
                     raise APIException(
                         detail=str(exc), code=INVALID_LIST_VALUE
@@ -223,7 +234,8 @@ def get_month_day_name(int_value: int, opt: str) -> str:
     Returns:
         str: The name of the month or day.
     """
-    days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    days = ["Lunes", "Martes", "Miércoles",
+            "Jueves", "Viernes", "Sábado", "Domingo"]
     months = [
         "Enero",
         "Febrero",
@@ -255,3 +267,43 @@ def get_month_day_name(int_value: int, opt: str) -> str:
 
 def inrange(n, range1, range2) -> bool:
     return range1[0] <= n <= range1[1] or range2[0] <= n <= range2[1]
+
+
+def time_to_decimal(time_str):
+    hours, minutes = map(int, time_str.split(':'))
+    decimal_time = hours + minutes / 60
+    return decimal_time
+
+
+def decimal_to_time(decimal_hours: Decimal):
+    hours = int(decimal_hours)
+    minutes = int((decimal_hours - hours) * 60)
+    return f"{hours:02}:{minutes:02}"
+
+
+def elapsed_time(date: datetime):
+    now = timezone.now()
+    diff = now - date
+
+    seconds = diff.total_seconds()
+    minutes = seconds // 60
+    hours = minutes // 60
+    days = hours // 24
+    weeks = days // 7
+    months = days // 30
+    years = days // 365
+
+    if seconds < 60:
+        return "hace unos segundos"
+    if minutes < 60:
+        return f"hace {int(minutes)} minuto(s)"
+    if hours < 24:
+        return f"hace {int(hours)} hora(s)"
+    if days < 7:
+        return f"hace {int(days)} día(s)"
+    if weeks < 4:
+        return f"hace {int(weeks)} semana(s)"
+    if months < 12:
+        return f"hace {int(months)} mes(es)"
+
+    return f"hace {int(years)} año(s)"

@@ -58,7 +58,8 @@ class UserManager(BaseUserManager):
             user.set_password(password)
             user.save(using=self._db)
 
-            max_user_role_id = RolesUsers.objects.all().aggregate(Max("id"))["id__max"]
+            max_user_role_id = RolesUsers.objects.all().aggregate(Max("id"))[
+                "id__max"]
             try:
                 if roles is not None:
                     roles_users = []
@@ -117,7 +118,8 @@ class User(AbstractBaseUser):
     )
 
     user_id = models.AutoField(primary_key=True)
-    identity_document = models.CharField(max_length=20, blank=False, null=False)
+    identity_document = models.CharField(
+        max_length=20, blank=False, null=False)
     document_type = models.CharField(
         max_length=2,
         blank=False,
@@ -128,7 +130,8 @@ class User(AbstractBaseUser):
     last_name = models.CharField(max_length=100, blank=False, null=False)
     email = models.EmailField(max_length=100, blank=False, null=False)
     password = models.CharField(max_length=100, blank=False, null=False)
-    username = models.CharField(max_length=100, blank=False, null=False, unique=True)
+    username = models.CharField(
+        max_length=100, blank=False, null=False, unique=True)
     phone = models.CharField(max_length=20)
     hired_date = models.DateField(blank=True, null=True)
     contract_end = models.DateField(blank=True, null=True)
@@ -139,8 +142,10 @@ class User(AbstractBaseUser):
         default="RD",
         choices=[("RD", "RD"), ("USD", "USD"), ("EUR", "EUR")],
     )
-    salary = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True, blank=False, null=False)
+    salary = models.DecimalField(
+        max_digits=10, decimal_places=2, blank=True, null=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True, blank=False, null=False)
     updated_at = models.DateTimeField(null=True, blank=True)
     gender = models.CharField(
         max_length=1, blank=False, null=False, default="M", choices=GENDER_CHOICES
@@ -267,10 +272,19 @@ class User(AbstractBaseUser):
 
         return ", ".join(roles)
 
+    @classmethod
+    def get_user_roles(cls, username) -> Manager['Roles']:
+        roles = RolesUsers.objects.filter(user_id__username=username, state=cls.ACTIVE).values_list(
+            "rol_id__rol_id", flat=True
+        )
+
+        return Roles.objects.filter(rol_id__in=roles)
+
     def render_avatar(self):
         if self.avatar:
             return format_html(
-                f'<img src="{self.avatar}" width="60" height="60" style="border-radius: 50%;" />'
+                f'<img src="{
+                    self.avatar}" width="60" height="60" style="border-radius: 50%;" />'
             )
         return ""
 
@@ -325,7 +339,8 @@ class BaseUsersModels(models.Model):
 
             if kwargs["state"] not in allowed_states:
                 raise APIException(
-                    f"`STATE` must be one of the following values: {allowed_states}"
+                    f"`STATE` must be one of the following values: {
+                        allowed_states}"
                 )
 
             return cls.objects.create(**kwargs)
@@ -339,7 +354,8 @@ class BaseUsersModels(models.Model):
 
             if kwargs.get("state", None) and kwargs["state"] not in allowed_states:
                 raise APIException(
-                    f"`STATE` must be one of the following values: {allowed_states}"
+                    f"`STATE` must be one of the following values: {
+                        allowed_states}"
                 )
 
             non_updateable_fields = [
@@ -347,7 +363,8 @@ class BaseUsersModels(models.Model):
             ]
             if non_updateable_fields:
                 raise APIException(
-                    "NON-UPDATEABLE FIELD(s): " + ", ".join(non_updateable_fields)
+                    "NON-UPDATEABLE FIELD(s): " +
+                    ", ".join(non_updateable_fields)
                 )
 
             kwargs["updated_by"] = request.user
@@ -438,10 +455,10 @@ class Roles(BaseUsersModels):
         return format_html(
             f"""<span
                 style="
-                    padding: 5px; 
-                    border-radius: 5px; 
+                    padding: 5px;
+                    border-radius: 5px;
                     background-color: {self.color};
-                    font-weight: bold; 
+                    font-weight: bold;
                     height: 50px;
                     width: 100px;
                     min-width: 180px"
@@ -485,7 +502,8 @@ class RolesUsers(BaseUsersModels):
         verbose_name = "Rol por usuario"
         verbose_name_plural = "Roles por usuarios"
         constraints = [
-            models.UniqueConstraint(fields=["rol_id", "user_id"], name="pk_rol_usuario")
+            models.UniqueConstraint(
+                fields=["rol_id", "user_id"], name="pk_rol_usuario")
         ]
 
 
@@ -546,13 +564,15 @@ class MenuOptions(BaseUsersModels):
                 # Si tiene un padre, genera un ID basado en el ID del padre y un número secuencial
                 parent_id = self.parent_id.menu_option_id
                 count_siblings = (
-                    MenuOptions.objects.filter(parent_id=self.parent_id).count() + 1
+                    MenuOptions.objects.filter(
+                        parent_id=self.parent_id).count() + 1
                 )
                 self.menu_option_id = f"{parent_id}-{count_siblings}"
             else:
                 # Si no tiene padre, genera un ID secuencial
                 count_options = (
-                    MenuOptions.objects.filter(parent_id__isnull=True).count() + 1
+                    MenuOptions.objects.filter(
+                        parent_id__isnull=True).count() + 1
                 )
                 self.menu_option_id = str(count_options)
 
@@ -586,7 +606,8 @@ class MenuOptions(BaseUsersModels):
                 )
             if not 0 <= int(self.order or 0) < len(siblings) + 1:
                 raise ValidationError(
-                    f"Order must be between 0 and {len(siblings)} for the given parent_id."
+                    f"Order must be between 0 and {
+                        len(siblings)} for the given parent_id."
                 )
 
     class Meta:
@@ -642,6 +663,7 @@ class MenuOptonXroles(BaseUsersModels):
 
 class OperationsMeneOptions(BaseUsersModels):
     """
+    `Operaciones por opciones de menú` \n
     This model represents the permission for each user on each menu option.\n
     This model is an intemediary model between `UserPermission` and `MenuOptions`.\n
     `TABLE NAME:` OPERATIONS_X_MENU_OPTIONS
@@ -659,7 +681,8 @@ class OperationsMeneOptions(BaseUsersModels):
 
     def __str__(self) -> str:
         return (
-            f"Operation: {self.user_permission_id}, Menu Option: {self.menu_option_id}"
+            f"Operation: {self.user_permission_id}, Menu Option: {
+                self.menu_option_id}"
         )
 
     def __repr__(self) -> str:
@@ -710,7 +733,8 @@ class UserPermission(BaseUsersModels):
     user_id = models.ForeignKey(
         User, on_delete=models.CASCADE, null=False, db_column="user_id"
     )
-    menu_options = models.ManyToManyField(MenuOptions, through="OperationsMeneOptions")
+    menu_options = models.ManyToManyField(
+        MenuOptions, through="OperationsMeneOptions")
 
     ALLOWED_FIELDS = ["operation_id", "user_id", "state"]
     REQUIRED_FIELDS = ALLOWED_FIELDS
@@ -783,7 +807,8 @@ class Parameters(BaseUsersModels):
     """
 
     parameter_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=50, null=False, blank=False, unique=True)
+    name = models.CharField(max_length=50, null=False,
+                            blank=False, unique=True)
     value = models.TextField(null=False, blank=False)
     description = models.CharField(max_length=250, null=True, blank=True)
 
@@ -837,7 +862,8 @@ class Department(BaseUsersModels):
     """
 
     department_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=50, null=False, blank=False, unique=True)
+    name = models.CharField(max_length=50, null=False,
+                            blank=False, unique=True)
     description = models.CharField(max_length=250, null=True, blank=True)
     color = models.CharField(max_length=8, null=True, blank=True)
 

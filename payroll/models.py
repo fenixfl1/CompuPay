@@ -14,6 +14,7 @@ from rest_framework.exceptions import APIException
 from helpers.exceptions import PayloadValidationError
 from helpers.models import BaseModels
 from helpers.utils import ordinal
+from time_management.models import Leaves, Overtime
 from users.models import User
 
 
@@ -36,12 +37,15 @@ class Payroll(BaseModels):
     period_start = models.DateField()
     period_end = models.DateField()
     period = models.IntegerField(default=1, unique_for_month=True)
+    includes_overtime = models.BooleanField(default=False)
+    includes_leaves = models.BooleanField(default=False)
     status = models.CharField(
-        blank=True, null=True, choices=STATUS_CHOICES, default=PENDING
+        max_length=1, blank=True, null=True, choices=STATUS_CHOICES, default=PENDING
     )
 
     REQUIRED_FIELDS = ["period_start", "period_end", "state"]
-    ALLOWED_FIELDS = REQUIRED_FIELDS + ["payroll_id", "employees"]
+    ALLOWED_FIELDS = REQUIRED_FIELDS + ["payroll_id", "employees",  "includes_overtime",
+                                        "includes_leaves"]
 
     def __str__(self):
         config = self.get_config()
@@ -74,7 +78,8 @@ class Payroll(BaseModels):
 
         settings = Payroll.get_config()
         if not settings:
-            raise ValidationError("No se encontró una configuración de nómina acitva")
+            raise ValidationError(
+                "No se encontró una configuración de nómina acitva")
 
         if existing_payrolls_in_month >= settings.periods:
             raise ValidationError(
@@ -96,70 +101,25 @@ class Payroll(BaseModels):
         if isinstance(employee, str) and employee == "__all__":
             employees = User.objects.filter(employee_query)
         elif isinstance(employee, list):
-            employees = User.objects.filter(Q(username__in=employee) & employee_query)
+            employees = User.objects.filter(
+                Q(username__in=employee) & employee_query)
         else:
             raise PayloadValidationError(
                 "Invalid employees field",
             )
         PayrollEntry.create_entries(payroll, employees, request.user)
 
-    @classmethod
-    def autostart_payroll(cls, user: User):
-        try:
-            config = (
-                PayrollSettings.objects.filter(
-                    Q(state=PayrollSettings.ACTIVE) & Q(autopay=True)
-                )
-                .order_by("-created_at")
-                .first()
-            )
-
-            if not config:
-                raise APIException("No hay configuración activa para la nómina.")
-
-            last_payroll = (
-                Payroll.objects.filter(status=Payroll.DONE)
-                .order_by("-period_end")
-                .first()
-            )
-
-            if last_payroll:
-                period_start = last_payroll.period_end + timedelta(days=1)
-            else:
-                period_start = timezone.now().date()
-
-            # Calculando la fecha final
-            if config.duration_days == 30:
-                period_end = period_start + timedelta(days=29)
-            else:
-                period_end = period_start + timedelta(days=config.duration_days - 1)
-
-            payroll = Payroll.objects.create(
-                payroll_id=Payroll.objects.all().count() + 1,
-                period_start=period_start,
-                period_end=period_end,
-                created_by=user,
-                state="A",
-                status=Payroll.PENDING,
-            )
-
-            # add all active employees to the new payroll
-            employees = User.objects.filter(Q(state="A") & Q(is_staff=True))
-            PayrollEntry.create_entries(payroll, employees, user)
-
-            return payroll
-
-        except Exception as e:
-            raise APIException(str(e)) from e
-
     @transaction.atomic
     def process_payroll(
         self, request: Request, users_id: list[int] = None
     ) -> "Payroll":
         settings = self.get_config()
-        payroll_entries = PayrollEntry.objects.filter(payroll_id=self.payroll_id)
+        apply_deduction = settings.periods == self.period
+        payroll_entries = PayrollEntry.objects.filter(
+            payroll_id=self.payroll_id)
         if users_id:
-            payroll_entries = payroll_entries.filter(user__user_id__in=users_id)
+            payroll_entries = payroll_entries.filter(
+                user__user_id__in=users_id)
 
         for entry in payroll_entries:
             if settings.periods == self.period:
@@ -178,7 +138,8 @@ class Payroll(BaseModels):
                             state=PayrollPaymentDetail.ACTIVE,
                             created_by=request.user,
                             gross_salary=entry.user.salary,
-                            comment=f"Descuento mensual por concepto de {deduction.deduction.name}",
+                            comment=f"Descuento mensual por concepto de \
+                                {deduction.deduction.name}",
                         )
                         detail.save()
 
@@ -191,7 +152,8 @@ class Payroll(BaseModels):
                         payroll_entry=entry,
                         concept=adjustment.concept,
                         period=self.period,
-                        concept_amount=Adjustment.get_amount(entry, adjustment.type),
+                        concept_amount=Adjustment.get_amount(
+                            entry, adjustment.type),
                         state=PayrollPaymentDetail.ACTIVE,
                         created_by=request.user,
                         gross_salary=entry.user.salary,
@@ -201,25 +163,100 @@ class Payroll(BaseModels):
                     detail.save()
                     Adjustment.objects.update(state=Adjustment.COMPLETED)
 
-            discount = Adjustment.calc_deduction(entry)
+            total_overtime_amount = Decimal("0.0")
+            total_hours = Decimal("0.0")
+            if self.includes_overtime:
+                overtimes = entry.get_employee_overtime()
+                concept = overtimes.first().concept
+                for overtime in overtimes:
+                    amount = overtime.get_amount()
+                    total_overtime_amount += amount
+                    total_hours += overtime.hours
+                    overtime.paid = True
+
+                detail = PayrollPaymentDetail(
+                    payroll=entry.payroll,
+                    payroll_entry=entry,
+                    concept=concept,
+                    period=self.period,
+                    concept_amount=total_overtime_amount,
+                    state=PayrollPaymentDetail.ACTIVE,
+                    created_by=request.user,
+                    gross_salary=entry.user.salary,
+                    comment=f"{total_hours} horas por un total de:",
+                    operator="+",
+                )
+                detail.save()
+                Overtime.objects.bulk_update(overtimes, ["paid"])
+
+            total_paid_leaves = Decimal("0.0")
+            total_discount_leaves = Decimal('0.0')
+            if self.includes_leaves:
+                paid_leaves = entry.get_leaves()
+                for leave in paid_leaves:
+                    leave.state = Leaves.DONE
+                    total_paid_leaves += leave.amount
+                    detail = PayrollPaymentDetail(
+                        payroll=entry.payroll,
+                        payroll_entry=entry,
+                        concept=concept,
+                        period=self.period,
+                        concept_amount=leave.amount,
+                        state=PayrollPaymentDetail.ACTIVE,
+                        created_by=request.user,
+                        gross_salary=entry.user.salary,
+                        comment=f"Pago por concepto de {leave.concept.name}",
+                        operator="+",
+                    )
+                    detail.save()
+                    Leaves.objects.bulk_update(paid_leaves,  ['state'])
+
+                discounted_leaves = entry.get_leaves(False)
+                for discount in discounted_leaves:
+                    discount.state = Leaves.DONE
+                    total_discount_leaves += discount.amount
+                    detail = PayrollPaymentDetail(
+                        payroll=entry.payroll,
+                        payroll_entry=entry,
+                        concept=concept,
+                        period=self.period,
+                        concept_amount=discount.amount,
+                        state=PayrollPaymentDetail.ACTIVE,
+                        created_by=request.user,
+                        gross_salary=entry.user.salary,
+                        comment=f"Descuento por concepto de {
+                            discount.concept.name}",
+                        operator="-",
+                    )
+                    detail.save()
+                    Leaves.objects.bulk_update(paid_leaves,  ['state'])
+
+            discount = Adjustment.calc_deduction(entry) + total_discount_leaves
             bonus = Adjustment.calc_bonus(entry)
-            afp = DeductionXuser.get_afp(entry.user)
-            sfs = DeductionXuser.get_sfs(entry.user)
-            isr = DeductionXuser.get_isr(entry.user)
+            afp = DeductionXuser.get_afp(
+                entry.user) if apply_deduction else Decimal("0.0")
+            sfs = DeductionXuser.get_sfs(
+                entry.user) if apply_deduction else Decimal("0.0")
+            isr = DeductionXuser.get_isr(
+                entry.user) if apply_deduction else Decimal("0.0")
 
             salary = entry.user.salary / settings.periods
-            net_salary = (salary + bonus) - discount - afp - sfs - isr
+            net_salary = (
+                (salary + bonus + total_overtime_amount + total_paid_leaves) -
+                discount - afp - sfs - isr
+            )
 
+            salary_concept = Concept.objects.get(name="SALARIO")
             detail = PayrollPaymentDetail(
                 payroll=entry.payroll,
                 payroll_entry=entry,
-                concept=Concept.objects.get(name="SALARIO"),
+                concept=salary_concept,
                 period=self.period,
                 concept_amount=net_salary,
                 state=PayrollPaymentDetail.ACTIVE,
                 created_by=request.user,
                 gross_salary=entry.user.salary,
-                operator="+",
+                operator=salary_concept.operator,
             )
             detail.save()
 
@@ -233,7 +270,7 @@ class Payroll(BaseModels):
         db_table = "PAYROLL"
         verbose_name = "Nómina"
         verbose_name_plural = "Nóminas"
-        ordering = ["-period_start"]
+        ordering = ["-payroll_id"]
 
 
 class Concept(BaseModels):
@@ -243,8 +280,14 @@ class Concept(BaseModels):
     `TABLE_NAME` CONCEPTS
     """
 
+    OPERATOR_CHOISES = (("+", "Suma"), ("-", "Resta"), (None, "Ninguno"))
+
     concept_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=20, null=False, blank=False, unique=False)
+    name = models.CharField(max_length=20, null=False,
+                            blank=False, unique=False)
+    operator = models.CharField(
+        max_length=1, null=True, blank=True, default="-", choices=OPERATOR_CHOISES
+    )
     description = models.CharField(max_length=250, null=True, blank=True)
 
     def __str__(self) -> str:
@@ -322,6 +365,21 @@ class PayrollEntry(BaseModels):
 
     def __str__(self):
         return f"@{self.user.username}"
+
+    def get_employee_overtime(self):
+        return Overtime.objects.filter(
+            Q(state=Overtime.ACTIVE)
+            & Q(paid=False)
+            & Q(employee__username=self.user.username)
+        )
+
+    def get_leaves(self, is_paid: bool = True):
+        return Leaves.objects.filter(
+            Q(state=Leaves.ACTIVE)
+            & Q(amount__gt=0)
+            & Q(is_paid=is_paid)
+            & Q(employee__username=self.user.username)
+        )
 
     @classmethod
     def create_entries(
@@ -420,7 +478,8 @@ class Adjustment(BaseModels):
 
     @classmethod
     def calc_deduction(cls, entry: PayrollEntry) -> Decimal:
-        deduction = Adjustment.objects.filter(Q(payroll_entry=entry) & Q(type="D"))
+        deduction = Adjustment.objects.filter(
+            Q(payroll_entry=entry) & Q(type="D"))
         total_deduction = Decimal("0.0")
         for deduc in deduction:
             total_deduction += deduc.amount
@@ -428,7 +487,8 @@ class Adjustment(BaseModels):
 
     @classmethod
     def get_amount(cls, entry: PayrollEntry, _type: str) -> Decimal:
-        deduction = Adjustment.objects.filter(Q(payroll_entry=entry) & Q(type=_type))
+        deduction = Adjustment.objects.filter(
+            Q(payroll_entry=entry) & Q(type=_type))
         total_deduction = Decimal("0.0")
         for deduc in deduction:
             total_deduction += deduc.amount
@@ -680,7 +740,8 @@ class PayrollPaymentDetail(BaseModels):
     concept_amount = models.DecimalField(decimal_places=2, max_digits=10)
     gross_salary = models.DecimalField(decimal_places=2, max_digits=10)
     comment = models.TextField(null=True, blank=True)
-    operator = models.CharField(max_length=1, default="-", choices=OPERATOR_CHOISES)
+    operator = models.CharField(
+        max_length=1, default="-", choices=OPERATOR_CHOISES)
 
     def __str__(self) -> str:
         if self.concept:

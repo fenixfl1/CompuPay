@@ -6,4 +6,5 @@ class NoticationsConfig(AppConfig):
     name = "notifications"
 
     def ready(self):
+        # pylint: disable=import-outside-toplevel
         import notifications.signals

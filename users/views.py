@@ -2,7 +2,9 @@ import datetime
 from django.contrib.auth import authenticate, get_user_model
 from django.forms.models import model_to_dict
 from django.db.models import Q, Max
+from django.core.files.storage import default_storage
 from django.core.exceptions import ObjectDoesNotExist
+from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
@@ -26,13 +28,11 @@ from helpers.utils import (
 )
 from payroll.models import DeductionXuser
 from users.models import (
-    STATE_CHOICES,
     ActivityLog,
     Department,
     MenuOptions,
     OperationsMeneOptions,
     Parameters,
-    PermissionsRoles,
     Roles,
     RolesUsers,
     User,
@@ -42,8 +42,13 @@ from users.serializers import (
     AuthenticateUserSerializer,
     MenuOptionsSerializer,
     RolesSerializer,
+    UserReportSerializer,
     UserSerializer,
 )
+
+# pylint: disable=no-name-in-module
+# pylint: disable=import-error
+from users.reports import user_reports
 
 
 class AuthenticationViewSet(ViewSet):
@@ -447,7 +452,8 @@ class UserViewSet(ViewSet):
         ).first()
         if not roles_users:
             raise APIException(
-                f"User with id: '{user_id}' does not have the role '{old_rol}'."
+                f"User with id: '{
+                    user_id}' does not have the role '{old_rol}'."
             )
 
         RolesUsers.update(
@@ -594,6 +600,30 @@ class UserViewSet(ViewSet):
 
         return Response({"data": serializer.data})
 
+    @viewException
+    def generate_report(self, request: Request):
+        conditions = request.data.get("condition", [])
+        fields = list_values_to_lower(request.data.get("fields", []))
+        column_widths: list[int] = request.data.get("column_widths", [])
+
+        if not conditions:
+            raise PayloadValidationError("The condition are required")
+        if not isinstance(conditions, list):
+            raise PayloadValidationError("Invalid condition")
+
+        conditon, exclude_condition = advanced_query_filter(conditions)
+
+        users = User.objects.filter(conditon)
+
+        for exclude in exclude_condition:
+            users = users.exclude(**exclude)
+
+        base64_pdf = user_reports.generate_user_report(
+            users, "Reporte de Usuarios", fields, column_widths
+        )
+
+        return Response({"data": base64_pdf})
+
 
 class MenuOptionsViewSet(ViewSet):
     """
@@ -608,7 +638,7 @@ class MenuOptionsViewSet(ViewSet):
     authentication_classes = [TokenAuthentication]
 
     @viewException
-    def get_menu_options(self, request):
+    def get_menu_options(self, request: Request):
         """
         Return a list of menu options.\n
         `METHOD`: GET
@@ -641,5 +671,7 @@ class MenuOptionsViewSet(ViewSet):
             & Q(parent_id__isnull=True)
         ).distinct()
 
-        serializer = MenuOptionsSerializer(menu_options, many=True)
+        serializer = MenuOptionsSerializer(
+            menu_options, many=True, context={"request": request}
+        )
         return Response({"data": serializer.data})

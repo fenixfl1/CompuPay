@@ -10,7 +10,8 @@ login_user = views.AuthenticationViewSet.as_view({"post": "login"})
 logout_user = views.AuthenticationViewSet.as_view({"get": "logout"})
 refresh_token = views.AuthenticationViewSet.as_view({"get": "refresh"})
 
-get_menu_options = views.MenuOptionsViewSet.as_view({"get": "get_menu_options"})
+get_menu_options = views.MenuOptionsViewSet.as_view(
+    {"get": "get_menu_options"})
 
 get_list_users = views.UserViewSet.as_view({"post": "get_list_users"})
 get_user = views.UserViewSet.as_view({"post": "get_user"})
@@ -22,7 +23,9 @@ asign_role = views.UserViewSet.as_view({"post": "asign_role"})
 remove_role = views.UserViewSet.as_view({"put": "remove_role"})
 get_roles_list = views.UserViewSet.as_view({"post": "get_roles_list"})
 change_password = views.UserViewSet.as_view({"put": "change_password"})
-get_department_list = views.UserViewSet.as_view({"post": "get_department_list"})
+get_department_list = views.UserViewSet.as_view(
+    {"post": "get_department_list"})
+generate_report = views.UserViewSet.as_view({"post": "generate_report"})
 
 
 urlpatterns = [
@@ -41,6 +44,7 @@ urlpatterns = [
     path(f"{BASE_PATH_USERS}remove_role/", remove_role),
     path(f"{BASE_PATH_USERS}get_roles_list", get_roles_list),
     path(f"{BASE_PATH_USERS}get_department_list/", get_department_list),
+    path(f"{BASE_PATH_USERS}generate_report/", generate_report),
 ]
 
 urlpatterns = format_suffix_patterns(urlpatterns)

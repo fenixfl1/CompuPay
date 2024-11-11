@@ -20,7 +20,6 @@ def autopay_payroll():
                 entry.status = True
                 entry.save()
 
-            Payroll.autostart_payroll(settings.created_by)
     # pylint: disable=broad-except
     except Exception:
         pass

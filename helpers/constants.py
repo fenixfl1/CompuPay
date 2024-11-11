@@ -26,3 +26,18 @@ colors = [
     "#d59da9",
     "#ecc7d3",
 ]
+
+months = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+]

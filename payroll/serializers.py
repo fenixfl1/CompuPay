@@ -1,3 +1,4 @@
+from functools import reduce
 from django.forms import model_to_dict
 from django.db.models import Q
 from rest_framework import serializers
@@ -11,6 +12,7 @@ from payroll.models import (
     PayrollPaymentDetail,
     PayrollSettings,
 )
+from time_management.models import Overtime
 
 
 class PayrollInfoSerializer(BaseModelSerializer):
@@ -23,7 +25,8 @@ class PayrollInfoSerializer(BaseModelSerializer):
 
     def get_payroll_config(self, instance: Payroll):
         config = instance.get_config()
-        serializer = PayrollSettingSerializer(config, data=model_to_dict(config))
+        serializer = PayrollSettingSerializer(
+            config, data=model_to_dict(config))
         serializer.is_valid(raise_exception=True)
         return serializer.data
 
@@ -38,6 +41,8 @@ class PayrollInfoSerializer(BaseModelSerializer):
             "next_payment",
             "current_period",
             "payroll_config",
+            "includes_overtime",
+            "includes_leaves"
         )
 
 
@@ -75,6 +80,22 @@ class PayrollEntrySerializer(BaseModelSerializer):
     isr = serializers.SerializerMethodField()
     afp = serializers.SerializerMethodField()
     sfs = serializers.SerializerMethodField()
+    overtimes = serializers.SerializerMethodField()
+    vacations = serializers.SerializerMethodField()
+    other_discount = serializers.SerializerMethodField()
+
+    def get_vacations(self, instance: PayrollEntry):
+        vacations = instance.get_leaves().values_list("amount", flat=True)
+        return sum(vacations)
+
+    def get_other_discount(self, instance: PayrollEntry):
+        discounts = instance.get_leaves(False).values_list("amount", flat=True)
+        return sum(discounts)
+
+    def get_overtimes(self, instance: PayrollEntry):
+        overtimes = instance.get_employee_overtime().values_list("rate", "hours")
+        total = sum(rate * hours for rate, hours in overtimes)
+        return total
 
     def get_avatar(self, instance: PayrollEntry):
         return instance.user.get_avatar()

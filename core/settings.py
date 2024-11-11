@@ -33,8 +33,10 @@ ALLOWED_HOSTS = ["*"]
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]
 
-CELERY_BROKER_RUL = "redis://172.25.166.7:6376/0"  # os.getenv("CELERY_BROKER_RUL")
-CELERY_RESULT_BACKEND = "redis://172.25.166.7:6376/0"  # os.getenv("CELERY_BACKEND")
+# os.getenv("CELERY_BROKER_RUL")
+CELERY_BROKER_RUL = "redis://172.25.166.7:6376/0"
+# os.getenv("CELERY_BACKEND")
+CELERY_RESULT_BACKEND = "redis://172.25.166.7:6376/0"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"

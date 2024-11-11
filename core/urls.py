@@ -27,4 +27,5 @@ urlpatterns = [
     path("", include("payroll.urls")),
     path("", include("dashboard.urls")),
     path("", include("notifications.urls")),
+    path("", include("time_management.urls")),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

@@ -75,7 +75,8 @@ class Task(BaseModels):
         for tag in tags:
             count += 1
             task_tags.append(
-                TagXTasks(id=count, task=self, tag=tag, created_by=self.created_by)
+                TagXTasks(id=count, task=self, tag=tag,
+                          created_by=self.created_by)
             )
         return TagXTasks.objects.bulk_create(task_tags)
 
@@ -162,10 +163,11 @@ class TaskXusers(BaseModels):
     def remove_user_from_task(cls, task: Task, users: list[User]) -> bool:
         try:
             task_users = cls.objects.filter(task=task, user__in=users)
-            cls.objects.bulk_update(task_users, [{"state": TaskXusers.INACTIVE}])
+            cls.objects.bulk_update(
+                task_users, [{"state": TaskXusers.INACTIVE}])
             return True
         # pylint: disable=broad-except
-        except Exception as e:
+        except Exception:
             return False
 
     class Meta:
@@ -173,7 +175,8 @@ class TaskXusers(BaseModels):
         verbose_name = "Tarea por usuario"
         verbose_name_plural = "Tareas por usuarios"
         constraints = [
-            models.UniqueConstraint(fields=["task", "user"], name="unique_task_x_user")
+            models.UniqueConstraint(
+                fields=["task", "user"], name="unique_task_x_user")
         ]
 
 
@@ -243,5 +246,6 @@ class TagXTasks(BaseModels):
         verbose_name = "Etiqueta por tarea"
         verbose_name_plural = "Etiquetas por tareas"
         constraints = [
-            models.UniqueConstraint(fields=["task", "tag"], name="unique_tag_x_task")
+            models.UniqueConstraint(
+                fields=["task", "tag"], name="unique_tag_x_task")
         ]

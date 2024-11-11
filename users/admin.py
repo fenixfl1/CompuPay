@@ -139,6 +139,11 @@ class PermissionsRolesInline(BaseModelInline):
     extra = 1
 
 
+class ParameterMenuOptionInline(BaseModelInline):
+    model = ParametesXmenuOptions
+    extra = 1
+
+
 class RolesAdmin(BaseModelAdmin):
     list_display = ("rol_id", "name", "description", "render_color")
     list_filter = ("state",)
@@ -203,6 +208,8 @@ class ParametesAdmin(BaseModelAdmin):
         "value",
     )
     list_filter = ("state",)
+
+    inlines = [ParameterMenuOptionInline]
 
 
 class ParametesXmenuOptionsAdmin(BaseModelAdmin):
