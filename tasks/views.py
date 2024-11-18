@@ -12,7 +12,7 @@ from helpers.common import BaseProtectedViewSet
 from helpers.exceptions import PayloadValidationError, viewException
 from helpers.serializers import PaginationSerializer
 from helpers.utils import advanced_query_filter, dict_key_to_lower, simple_query_filter
-from tasks.models import TagXTasks, Tags, Task, TaskXusers
+from tasks.models import TagXTasks, Tags, Task, TaskXUsers
 from tasks.serializers import TagSerializer, TaskSeriaizer
 from users.models import ActivityLog
 
@@ -200,8 +200,8 @@ class TaskViewSet(BaseProtectedViewSet):
 
         # Obtener los usuarios asignados actualmente a la tarea
         current_users = set(
-            TaskXusers.objects.filter(
-                Q(task=task) & Q(state=TaskXusers.ACTIVE)
+            TaskXUsers.objects.filter(
+                Q(task=task) & Q(state=TaskXUsers.ACTIVE)
             ).values_list("user", flat=True)
         )
 
@@ -221,7 +221,7 @@ class TaskViewSet(BaseProtectedViewSet):
 
         # Agregar nuevos usuarios
         if users_to_add:
-            TaskXusers.add_task_to_user(task, users_to_add)
+            TaskXUsers.add_task_to_user(task, users_to_add)
 
         return Response({"message": "Users have been updated successfully."})
 

@@ -15,7 +15,7 @@ from django.contrib.auth.forms import (
 from users.models import MenuOptions, OperationsMeneOptions, UserPermission
 
 
-class UstomAuthForm(AuthenticationForm):
+class CustomAuthForm(AuthenticationForm):
     def confirm_login_allowed(self, user: AbstractBaseUser):
         if not user.state:
             raise forms.ValidationError(

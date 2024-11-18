@@ -44,8 +44,12 @@ class Payroll(BaseModels):
     )
 
     REQUIRED_FIELDS = ["period_start", "period_end", "state"]
-    ALLOWED_FIELDS = REQUIRED_FIELDS + ["payroll_id", "employees",  "includes_overtime",
-                                        "includes_leaves"]
+    ALLOWED_FIELDS = REQUIRED_FIELDS + [
+        "payroll_id",
+        "employees",
+        "includes_overtime",
+        "includes_leaves",
+    ]
 
     def __str__(self):
         config = self.get_config()
@@ -78,8 +82,7 @@ class Payroll(BaseModels):
 
         settings = Payroll.get_config()
         if not settings:
-            raise ValidationError(
-                "No se encontró una configuración de nómina acitva")
+            raise ValidationError("No se encontró una configuración de nómina acitva")
 
         if existing_payrolls_in_month >= settings.periods:
             raise ValidationError(
@@ -101,8 +104,7 @@ class Payroll(BaseModels):
         if isinstance(employee, str) and employee == "__all__":
             employees = User.objects.filter(employee_query)
         elif isinstance(employee, list):
-            employees = User.objects.filter(
-                Q(username__in=employee) & employee_query)
+            employees = User.objects.filter(Q(username__in=employee) & employee_query)
         else:
             raise PayloadValidationError(
                 "Invalid employees field",
@@ -115,11 +117,9 @@ class Payroll(BaseModels):
     ) -> "Payroll":
         settings = self.get_config()
         apply_deduction = settings.periods == self.period
-        payroll_entries = PayrollEntry.objects.filter(
-            payroll_id=self.payroll_id)
+        payroll_entries = PayrollEntry.objects.filter(payroll_id=self.payroll_id)
         if users_id:
-            payroll_entries = payroll_entries.filter(
-                user__user_id__in=users_id)
+            payroll_entries = payroll_entries.filter(user__user_id__in=users_id)
 
         for entry in payroll_entries:
             if settings.periods == self.period:
@@ -152,8 +152,7 @@ class Payroll(BaseModels):
                         payroll_entry=entry,
                         concept=adjustment.concept,
                         period=self.period,
-                        concept_amount=Adjustment.get_amount(
-                            entry, adjustment.type),
+                        concept_amount=Adjustment.get_amount(entry, adjustment.type),
                         state=PayrollPaymentDetail.ACTIVE,
                         created_by=request.user,
                         gross_salary=entry.user.salary,
@@ -165,8 +164,8 @@ class Payroll(BaseModels):
 
             total_overtime_amount = Decimal("0.0")
             total_hours = Decimal("0.0")
-            if self.includes_overtime:
-                overtimes = entry.get_employee_overtime()
+            overtimes = entry.get_employee_overtime()
+            if self.includes_overtime and overtime:
                 concept = overtimes.first().concept
                 for overtime in overtimes:
                     amount = overtime.get_amount()
@@ -190,9 +189,9 @@ class Payroll(BaseModels):
                 Overtime.objects.bulk_update(overtimes, ["paid"])
 
             total_paid_leaves = Decimal("0.0")
-            total_discount_leaves = Decimal('0.0')
-            if self.includes_leaves:
-                paid_leaves = entry.get_leaves()
+            total_discount_leaves = Decimal("0.0")
+            paid_leaves = entry.get_leaves()
+            if self.includes_leaves and paid_leaves:
                 for leave in paid_leaves:
                     leave.state = Leaves.DONE
                     total_paid_leaves += leave.amount
@@ -209,7 +208,7 @@ class Payroll(BaseModels):
                         operator="+",
                     )
                     detail.save()
-                    Leaves.objects.bulk_update(paid_leaves,  ['state'])
+                    Leaves.objects.bulk_update(paid_leaves, ["state"])
 
                 discounted_leaves = entry.get_leaves(False)
                 for discount in discounted_leaves:
@@ -229,21 +228,33 @@ class Payroll(BaseModels):
                         operator="-",
                     )
                     detail.save()
-                    Leaves.objects.bulk_update(paid_leaves,  ['state'])
+                    Leaves.objects.bulk_update(paid_leaves, ["state"])
 
             discount = Adjustment.calc_deduction(entry) + total_discount_leaves
             bonus = Adjustment.calc_bonus(entry)
-            afp = DeductionXuser.get_afp(
-                entry.user) if apply_deduction else Decimal("0.0")
-            sfs = DeductionXuser.get_sfs(
-                entry.user) if apply_deduction else Decimal("0.0")
-            isr = DeductionXuser.get_isr(
-                entry.user) if apply_deduction else Decimal("0.0")
+            afp = (
+                DeductionXuser.get_afp(entry.user)
+                if apply_deduction
+                else Decimal("0.0")
+            )
+            sfs = (
+                DeductionXuser.get_sfs(entry.user)
+                if apply_deduction
+                else Decimal("0.0")
+            )
+            isr = (
+                DeductionXuser.get_isr(entry.user)
+                if apply_deduction
+                else Decimal("0.0")
+            )
 
             salary = entry.user.salary / settings.periods
             net_salary = (
-                (salary + bonus + total_overtime_amount + total_paid_leaves) -
-                discount - afp - sfs - isr
+                (salary + bonus + total_overtime_amount + total_paid_leaves)
+                - discount
+                - afp
+                - sfs
+                - isr
             )
 
             salary_concept = Concept.objects.get(name="SALARIO")
@@ -283,8 +294,7 @@ class Concept(BaseModels):
     OPERATOR_CHOISES = (("+", "Suma"), ("-", "Resta"), (None, "Ninguno"))
 
     concept_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=20, null=False,
-                            blank=False, unique=False)
+    name = models.CharField(max_length=20, null=False, blank=False, unique=False)
     operator = models.CharField(
         max_length=1, null=True, blank=True, default="-", choices=OPERATOR_CHOISES
     )
@@ -478,8 +488,7 @@ class Adjustment(BaseModels):
 
     @classmethod
     def calc_deduction(cls, entry: PayrollEntry) -> Decimal:
-        deduction = Adjustment.objects.filter(
-            Q(payroll_entry=entry) & Q(type="D"))
+        deduction = Adjustment.objects.filter(Q(payroll_entry=entry) & Q(type="D"))
         total_deduction = Decimal("0.0")
         for deduc in deduction:
             total_deduction += deduc.amount
@@ -487,8 +496,7 @@ class Adjustment(BaseModels):
 
     @classmethod
     def get_amount(cls, entry: PayrollEntry, _type: str) -> Decimal:
-        deduction = Adjustment.objects.filter(
-            Q(payroll_entry=entry) & Q(type=_type))
+        deduction = Adjustment.objects.filter(Q(payroll_entry=entry) & Q(type=_type))
         total_deduction = Decimal("0.0")
         for deduc in deduction:
             total_deduction += deduc.amount
@@ -740,8 +748,7 @@ class PayrollPaymentDetail(BaseModels):
     concept_amount = models.DecimalField(decimal_places=2, max_digits=10)
     gross_salary = models.DecimalField(decimal_places=2, max_digits=10)
     comment = models.TextField(null=True, blank=True)
-    operator = models.CharField(
-        max_length=1, default="-", choices=OPERATOR_CHOISES)
+    operator = models.CharField(max_length=1, default="-", choices=OPERATOR_CHOISES)
 
     def __str__(self) -> str:
         if self.concept:

@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from helpers.admin import BaseModelAdmin
-from tasks.models import TagXTasks, Tags, Task, TaskXusers
+from tasks.models import TagXTasks, Tags, Task, TaskXUsers
 
 
 class TaskAdmin(BaseModelAdmin):
@@ -23,7 +23,7 @@ class TagsAdmin(BaseModelAdmin):
         "tag_id",
         "name",
         "description",
-        "mormalize_color",
+        "normalize_color",
     )
     search_fields = ("name", "description")
     list_filter = ("name", "description")
@@ -49,4 +49,4 @@ class TaskxusersAdmin(BaseModelAdmin):
 admin.site.register(Task, TaskAdmin)
 admin.site.register(Tags, TagsAdmin)
 admin.site.register(TagXTasks, TagXTasksAdmin)
-admin.site.register(TaskXusers, TaskxusersAdmin)
+admin.site.register(TaskXUsers, TaskxusersAdmin)

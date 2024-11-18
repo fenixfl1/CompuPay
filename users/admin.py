@@ -5,17 +5,18 @@ from users.forms import (
     CustomCreationForm,
     CustomUserChangeForm,
     OperationsMeneOptionsForm,
-    UstomAuthForm,
+    CustomAuthForm,
 )
 from users.models import (
     ActivityLog,
+    Business,
     Department,
     MenuOptions,
-    MenuOptonXroles,
+    MenuOptionXRoles,
     Operations,
     OperationsMeneOptions,
     Parameters,
-    ParametesXmenuOptions,
+    ParametersXMenuOptions,
     PermissionsRoles,
     Roles,
     RolesUsers,
@@ -30,7 +31,7 @@ class UserAdmin(BaseModelAdmin):
     """
 
     add_form = CustomCreationForm
-    login_form = UstomAuthForm
+    login_form = CustomAuthForm
     model = User
     form = CustomUserChangeForm
 
@@ -140,7 +141,7 @@ class PermissionsRolesInline(BaseModelInline):
 
 
 class ParameterMenuOptionInline(BaseModelInline):
-    model = ParametesXmenuOptions
+    model = ParametersXMenuOptions
     extra = 1
 
 
@@ -200,7 +201,7 @@ class RolesUserAdmin(BaseModelAdmin):
     list_filter = ("state",)
 
 
-class ParametesAdmin(BaseModelAdmin):
+class ParametersAdmin(BaseModelAdmin):
     list_display = (
         "parameter_id",
         "name",
@@ -212,7 +213,7 @@ class ParametesAdmin(BaseModelAdmin):
     inlines = [ParameterMenuOptionInline]
 
 
-class ParametesXmenuOptionsAdmin(BaseModelAdmin):
+class ParametersXMenuOptionsAdmin(BaseModelAdmin):
     list_display = (
         "parameter_id",
         "option_id",
@@ -229,7 +230,7 @@ class DepartmentAdmin(BaseModelAdmin):
     list_filter = ("state",)
 
 
-class MenuOptionXrolesAdmin(BaseModelAdmin):
+class MenuOptionXRolesAdmin(BaseModelAdmin):
     list_display = (
         "get_rol_name",
         "get_option_name",
@@ -250,6 +251,10 @@ class ActivityLogAdmin(admin.ModelAdmin):
     list_filter = ["username"]
 
 
+class BusinessAdmin(BaseModelAdmin):
+    list_display = ("business_id", "name", "rnc", "display_representative")
+
+
 admin.site.register(User, UserAdmin)
 admin.site.register(MenuOptions, MenuOptionAdmin)
 admin.site.register(Roles, RolesAdmin)
@@ -257,9 +262,10 @@ admin.site.register(Operations, OperationsAdmin)
 admin.site.register(UserPermission, UserPermissionAdmin)
 admin.site.register(OperationsMeneOptions, OperationsMeneOptionsAdmin)
 admin.site.register(RolesUsers, RolesUserAdmin)
-admin.site.register(Parameters, ParametesAdmin)
-admin.site.register(ParametesXmenuOptions, ParametesXmenuOptionsAdmin)
+admin.site.register(Parameters, ParametersAdmin)
+admin.site.register(ParametersXMenuOptions, ParametersXMenuOptionsAdmin)
 admin.site.register(Department, DepartmentAdmin)
 admin.site.register(PermissionsRoles, PermissionsRolesAdmin)
-admin.site.register(MenuOptonXroles, MenuOptionXrolesAdmin)
+admin.site.register(MenuOptionXRoles, MenuOptionXRolesAdmin)
 admin.site.register(ActivityLog, ActivityLogAdmin)
+admin.site.register(Business, BusinessAdmin)

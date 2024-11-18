@@ -196,6 +196,52 @@ class UserViewSet(ViewSet):
         return Response({"message": "Password changed successfully"})
 
     @viewException
+    def check_username(self, request: Request):
+        """
+        This endpoint is used to check if an given username is available
+        `METHOD`: POST
+        """
+        data = dict_key_to_lower(request.data)
+        username = data.get("username", None)
+        if not username:
+            raise PayloadValidationError(
+                "USERNAME is required", status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if User.objects.filter(username=username).exists() is True:
+            return Response(
+                {"message": "El nombre de usuario ya esta en uso"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response(
+            {"message": "Nombre de usuario disponible."}, status=status.HTTP_200_OK
+        )
+
+    @viewException
+    def check_identity_document(self, request: Request):
+        """
+        This endpoint is used to check if an given identity document is available
+        `METHOD`: POST
+        """
+        data = dict_key_to_lower(request.data)
+        document = data.get("identity_document", None)
+        if not document:
+            raise PayloadValidationError(
+                "IDENTITY_DOCUMENT is required", status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if User.objects.filter(identity_document=document).exists() is True:
+            return Response(
+                {"message": "El documento de identidad digitada ya existe."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response(
+            {"message": "Documento de identidad disponible."}, status=status.HTTP_200_OK
+        )
+
+    @viewException
     def get_list_users(self, request):
         """
         Return a list of users.\n
@@ -664,7 +710,7 @@ class MenuOptionsViewSet(ViewSet):
         menu_options = MenuOptions.objects.filter(
             Q(
                 Q(menu_option_id__in=opration_menu_options)
-                | Q(menuoptonxroles__rol_id__in=roles)
+                | Q(menuoptionxroles__rol_id__in=roles)
                 | Q(userpermission__user_id=user)
             )
             & Q(state=MenuOptions.ACTIVE)

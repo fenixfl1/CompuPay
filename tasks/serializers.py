@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.db.models import Q
 from django.contrib.auth import get_user_model
 
-from tasks.models import Tags, Task, TaskXusers
+from tasks.models import Tags, Task, TaskXUsers
 from helpers.serializers import BaseModelSerializer, DynamicSerializer
 
 User = get_user_model()
@@ -13,8 +13,8 @@ class TaskSeriaizer(BaseModelSerializer):
     assigned_users = serializers.SerializerMethodField()
 
     def get_assigned_users(self, instance: Task):
-        task_users = TaskXusers.objects.filter(
-            Q(task=instance) & Q(state=TaskXusers.ACTIVE)
+        task_users = TaskXUsers.objects.filter(
+            Q(task=instance) & Q(state=TaskXUsers.ACTIVE)
         )
         users = User.objects.filter(
             username__in=task_users.values_list("user__username", flat=True)

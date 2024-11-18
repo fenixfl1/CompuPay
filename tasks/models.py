@@ -34,7 +34,7 @@ class Task(BaseModels):
     )
     users = models.ManyToManyField(
         User,
-        through="TaskXusers",
+        through="TaskXUsers",
         through_fields=("task", "user"),
         related_name="%(class)s_users",
     )
@@ -47,26 +47,26 @@ class Task(BaseModels):
 
     def add_task_to_user(self, users: list[User]) -> None:
         task_users = []
-        count = TaskXusers.objects.all().count()
+        count = TaskXUsers.objects.all().count()
         for user in users:
             count += 1
             task_users.append(
-                TaskXusers(
+                TaskXUsers(
                     id=count,
                     task=self,
                     user=user,
                     created_by=self.created_by,
-                    state=TaskXusers.ACTIVE,
+                    state=TaskXUsers.ACTIVE,
                 )
             )
-        return TaskXusers.objects.bulk_create(task_users)
+        return TaskXUsers.objects.bulk_create(task_users)
 
     def remove_user_from_task(self, users: list[User]) -> None:
         for user in users:
             # update the state of the user to inactive
-            task_user = TaskXusers.objects.filter(task=self, user=user).first()
+            task_user = TaskXUsers.objects.filter(task=self, user=user).first()
             if task_user:
-                task_user.state = TaskXusers.INACTIVE
+                task_user.state = TaskXUsers.INACTIVE
                 task_user.save()
 
     def add_tag_to_task(self, tags: list["Tags"]) -> None:
@@ -75,8 +75,7 @@ class Task(BaseModels):
         for tag in tags:
             count += 1
             task_tags.append(
-                TagXTasks(id=count, task=self, tag=tag,
-                          created_by=self.created_by)
+                TagXTasks(id=count, task=self, tag=tag, created_by=self.created_by)
             )
         return TagXTasks.objects.bulk_create(task_tags)
 
@@ -101,7 +100,7 @@ class Task(BaseModels):
         ordering = ["-task_id"]
 
 
-class TaskXusers(BaseModels):
+class TaskXUsers(BaseModels):
     """
     This model represents the relationship between tasks and users.\n
     `TABLE` TASKS_X_USERS
@@ -133,38 +132,37 @@ class TaskXusers(BaseModels):
 
         for user in users:
             # Verifica si el usuario ya está asignado a la tarea
-            task_user = TaskXusers.objects.filter(task=task, user=user).first()
+            task_user = TaskXUsers.objects.filter(task=task, user=user).first()
 
             if task_user:
                 # Si está asignado y el estado es INACTIVE, actualiza a ACTIVE
-                if task_user.state == TaskXusers.INACTIVE:
-                    task_user.state = TaskXusers.ACTIVE
+                if task_user.state == TaskXUsers.INACTIVE:
+                    task_user.state = TaskXUsers.ACTIVE
                     task_users_to_update.append(task_user)
             else:
                 # Si no está asignado, crea una nueva relación
                 task_users.append(
-                    TaskXusers(
+                    TaskXUsers(
                         task=task,
                         user=user,
                         created_by=task.created_by,
-                        state=TaskXusers.ACTIVE,
+                        state=TaskXUsers.ACTIVE,
                     )
                 )
 
         # Crear las nuevas relaciones en lote (bulk_create)
         if task_users:
-            TaskXusers.objects.bulk_create(task_users)
+            TaskXUsers.objects.bulk_create(task_users)
 
         # Actualizar las relaciones existentes a ACTIVE
         if task_users_to_update:
-            TaskXusers.objects.bulk_update(task_users_to_update, ["state"])
+            TaskXUsers.objects.bulk_update(task_users_to_update, ["state"])
 
     @classmethod
     def remove_user_from_task(cls, task: Task, users: list[User]) -> bool:
         try:
             task_users = cls.objects.filter(task=task, user__in=users)
-            cls.objects.bulk_update(
-                task_users, [{"state": TaskXusers.INACTIVE}])
+            cls.objects.bulk_update(task_users, [{"state": TaskXUsers.INACTIVE}])
             return True
         # pylint: disable=broad-except
         except Exception:
@@ -175,8 +173,7 @@ class TaskXusers(BaseModels):
         verbose_name = "Tarea por usuario"
         verbose_name_plural = "Tareas por usuarios"
         constraints = [
-            models.UniqueConstraint(
-                fields=["task", "user"], name="unique_task_x_user")
+            models.UniqueConstraint(fields=["task", "user"], name="unique_task_x_user")
         ]
 
 
@@ -193,7 +190,7 @@ class Tags(BaseModels):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name!r})"
 
-    def mormalize_color(self) -> SafeText:
+    def normalize_color(self) -> SafeText:
         return format_html(
             f"""<div
                     style="background-color: {self.color};
@@ -210,7 +207,7 @@ class Tags(BaseModels):
                 </div>"""
         )
 
-    mormalize_color.short_description = "Color"
+    normalize_color.short_description = "Color"
 
     class Meta:
         db_table = "TAGS"
@@ -246,6 +243,5 @@ class TagXTasks(BaseModels):
         verbose_name = "Etiqueta por tarea"
         verbose_name_plural = "Etiquetas por tareas"
         constraints = [
-            models.UniqueConstraint(
-                fields=["task", "tag"], name="unique_tag_x_task")
+            models.UniqueConstraint(fields=["task", "tag"], name="unique_tag_x_task")
         ]

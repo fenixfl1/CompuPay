@@ -58,8 +58,7 @@ class UserManager(BaseUserManager):
             user.set_password(password)
             user.save(using=self._db)
 
-            max_user_role_id = RolesUsers.objects.all().aggregate(Max("id"))[
-                "id__max"]
+            max_user_role_id = RolesUsers.objects.all().aggregate(Max("id"))["id__max"]
             try:
                 if roles is not None:
                     roles_users = []
@@ -118,8 +117,7 @@ class User(AbstractBaseUser):
     )
 
     user_id = models.AutoField(primary_key=True)
-    identity_document = models.CharField(
-        max_length=20, blank=False, null=False)
+    identity_document = models.CharField(max_length=20, blank=False, null=False)
     document_type = models.CharField(
         max_length=2,
         blank=False,
@@ -130,8 +128,7 @@ class User(AbstractBaseUser):
     last_name = models.CharField(max_length=100, blank=False, null=False)
     email = models.EmailField(max_length=100, blank=False, null=False)
     password = models.CharField(max_length=100, blank=False, null=False)
-    username = models.CharField(
-        max_length=100, blank=False, null=False, unique=True)
+    username = models.CharField(max_length=100, blank=False, null=False, unique=True)
     phone = models.CharField(max_length=20)
     hired_date = models.DateField(blank=True, null=True)
     contract_end = models.DateField(blank=True, null=True)
@@ -142,10 +139,8 @@ class User(AbstractBaseUser):
         default="RD",
         choices=[("RD", "RD"), ("USD", "USD"), ("EUR", "EUR")],
     )
-    salary = models.DecimalField(
-        max_digits=10, decimal_places=2, blank=True, null=True)
-    created_at = models.DateTimeField(
-        auto_now_add=True, blank=False, null=False)
+    salary = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, blank=False, null=False)
     updated_at = models.DateTimeField(null=True, blank=True)
     gender = models.CharField(
         max_length=1, blank=False, null=False, default="M", choices=GENDER_CHOICES
@@ -273,10 +268,10 @@ class User(AbstractBaseUser):
         return ", ".join(roles)
 
     @classmethod
-    def get_user_roles(cls, username) -> Manager['Roles']:
-        roles = RolesUsers.objects.filter(user_id__username=username, state=cls.ACTIVE).values_list(
-            "rol_id__rol_id", flat=True
-        )
+    def get_user_roles(cls, username) -> Manager["Roles"]:
+        roles = RolesUsers.objects.filter(
+            user_id__username=username, state=cls.ACTIVE
+        ).values_list("rol_id__rol_id", flat=True)
 
         return Roles.objects.filter(rol_id__in=roles)
 
@@ -363,8 +358,7 @@ class BaseUsersModels(models.Model):
             ]
             if non_updateable_fields:
                 raise APIException(
-                    "NON-UPDATEABLE FIELD(s): " +
-                    ", ".join(non_updateable_fields)
+                    "NON-UPDATEABLE FIELD(s): " + ", ".join(non_updateable_fields)
                 )
 
             kwargs["updated_by"] = request.user
@@ -502,8 +496,7 @@ class RolesUsers(BaseUsersModels):
         verbose_name = "Rol por usuario"
         verbose_name_plural = "Roles por usuarios"
         constraints = [
-            models.UniqueConstraint(
-                fields=["rol_id", "user_id"], name="pk_rol_usuario")
+            models.UniqueConstraint(fields=["rol_id", "user_id"], name="pk_rol_usuario")
         ]
 
 
@@ -539,7 +532,7 @@ class MenuOptions(BaseUsersModels):
     parameters = models.ManyToManyField("Parameters", blank=True)
     roles = models.ManyToManyField(
         Roles,
-        through="MenuOptonXroles",
+        through="MenuOptionXRoles",
         through_fields=("option_id", "rol_id"),
         related_name="%(class)s_roles",
     )
@@ -564,15 +557,13 @@ class MenuOptions(BaseUsersModels):
                 # Si tiene un padre, genera un ID basado en el ID del padre y un número secuencial
                 parent_id = self.parent_id.menu_option_id
                 count_siblings = (
-                    MenuOptions.objects.filter(
-                        parent_id=self.parent_id).count() + 1
+                    MenuOptions.objects.filter(parent_id=self.parent_id).count() + 1
                 )
                 self.menu_option_id = f"{parent_id}-{count_siblings}"
             else:
                 # Si no tiene padre, genera un ID secuencial
                 count_options = (
-                    MenuOptions.objects.filter(
-                        parent_id__isnull=True).count() + 1
+                    MenuOptions.objects.filter(parent_id__isnull=True).count() + 1
                 )
                 self.menu_option_id = str(count_options)
 
@@ -622,7 +613,7 @@ class MenuOptions(BaseUsersModels):
         ]
 
 
-class MenuOptonXroles(BaseUsersModels):
+class MenuOptionXRoles(BaseUsersModels):
     """
     This model represents the relationship between Menu Options and Roles.
     `TABLE NAME`: MENU_OPTIONS_X_ROLES
@@ -680,10 +671,8 @@ class OperationsMeneOptions(BaseUsersModels):
     )
 
     def __str__(self) -> str:
-        return (
-            f"Operation: {self.user_permission_id}, Menu Option: {
+        return f"Operation: {self.user_permission_id}, Menu Option: {
                 self.menu_option_id}"
-        )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.user_permission_id!r})"
@@ -733,8 +722,7 @@ class UserPermission(BaseUsersModels):
     user_id = models.ForeignKey(
         User, on_delete=models.CASCADE, null=False, db_column="user_id"
     )
-    menu_options = models.ManyToManyField(
-        MenuOptions, through="OperationsMeneOptions")
+    menu_options = models.ManyToManyField(MenuOptions, through="OperationsMeneOptions")
 
     ALLOWED_FIELDS = ["operation_id", "user_id", "state"]
     REQUIRED_FIELDS = ALLOWED_FIELDS
@@ -807,8 +795,7 @@ class Parameters(BaseUsersModels):
     """
 
     parameter_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=50, null=False,
-                            blank=False, unique=True)
+    name = models.CharField(max_length=50, null=False, blank=False, unique=True)
     value = models.TextField(null=False, blank=False)
     description = models.CharField(max_length=250, null=True, blank=True)
 
@@ -825,7 +812,7 @@ class Parameters(BaseUsersModels):
         ordering = ["parameter_id"]
 
 
-class ParametesXmenuOptions(BaseUsersModels):
+class ParametersXMenuOptions(BaseUsersModels):
     """
     This model represents the relationship between Parameters and Menu Options.\n
     `TABLE NAME`: PARAMETERS_X_MENU_OPTIONS
@@ -862,8 +849,7 @@ class Department(BaseUsersModels):
     """
 
     department_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=50, null=False,
-                            blank=False, unique=True)
+    name = models.CharField(max_length=50, null=False, blank=False, unique=True)
     description = models.CharField(max_length=250, null=True, blank=True)
     color = models.CharField(max_length=8, null=True, blank=True)
 
@@ -946,3 +932,34 @@ class ActivityLog(models.Model):
         )
 
         activity.save()
+
+
+class Business(BaseUsersModels):
+    """
+    `TABLE NAME` BUSINESS
+    """
+
+    business_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100, null=False, blank=False)
+    rnc = models.CharField(max_length=11)
+    representative = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        to_field="username",
+        related_name="%(class)s_representative",
+        null=True,
+        blank=True,
+        db_column="representative",
+    )
+
+    class Meta:
+        db_table = "BUSINESS"
+        verbose_name = "Empresa"
+
+    def __str__(self):
+        return f"{self.name}"
+
+    def display_representative(self):
+        return f"{self.representative.name} {self.representative.last_name}"
+
+    display_representative.short_description = "Representative"

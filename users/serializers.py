@@ -9,7 +9,7 @@ from users.models import (
     Operations,
     OperationsMeneOptions,
     Parameters,
-    ParametesXmenuOptions,
+    ParametersXMenuOptions,
     PermissionsRoles,
     Roles,
     RolesUsers,
@@ -201,7 +201,7 @@ class MenuOptionsSerializer(BaseModelSerializer):
         menu_options = MenuOptions.objects.filter(
             Q(
                 Q(menu_option_id__in=opration_menu_options)
-                | Q(menuoptonxroles__rol_id__in=roles)
+                | Q(menuoptionxroles__rol_id__in=roles)
                 | Q(userpermission__user_id=user)
             )
             & Q(state=MenuOptions.ACTIVE)
@@ -221,8 +221,9 @@ class MenuOptionsSerializer(BaseModelSerializer):
         childrens = MenuOptions.objects.filter(parent_id=instance.menu_option_id)
         if childrens:
             return None
-        params_x_menu = ParametesXmenuOptions.objects.filter(
-            Q(option_id=instance.menu_option_id) & Q(state=ParametesXmenuOptions.ACTIVE)
+        params_x_menu = ParametersXMenuOptions.objects.filter(
+            Q(option_id=instance.menu_option_id)
+            & Q(state=ParametersXMenuOptions.ACTIVE)
         ).values_list("parameter_id", flat=True)
         parameters = Parameters.objects.filter(parameter_id__in=params_x_menu)
         serializer = ParametersSerializer(parameters, many=True)
