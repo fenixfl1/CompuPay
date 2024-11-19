@@ -25,8 +25,7 @@ class PayrollInfoSerializer(BaseModelSerializer):
 
     def get_payroll_config(self, instance: Payroll):
         config = instance.get_config()
-        serializer = PayrollSettingSerializer(
-            config, data=model_to_dict(config))
+        serializer = PayrollSettingSerializer(config, data=model_to_dict(config))
         serializer.is_valid(raise_exception=True)
         return serializer.data
 
@@ -42,7 +41,7 @@ class PayrollInfoSerializer(BaseModelSerializer):
             "current_period",
             "payroll_config",
             "includes_overtime",
-            "includes_leaves"
+            "includes_leaves",
         )
 
 

@@ -217,7 +217,7 @@ class Payroll(BaseModels):
                     detail = PayrollPaymentDetail(
                         payroll=entry.payroll,
                         payroll_entry=entry,
-                        concept=concept,
+                        concept=discount.concept,
                         period=self.period,
                         concept_amount=discount.amount,
                         state=PayrollPaymentDetail.ACTIVE,
@@ -393,23 +393,23 @@ class PayrollEntry(BaseModels):
 
     @classmethod
     def create_entries(
-        cls, payroll: Payroll, employees: list[User], currentuser: User
+        cls, payroll: Payroll, employees: list[User], current_user: User
     ) -> list["PayrollEntry"]:
         try:
-            enries: list[PayrollEntry] = []
+            entries: list[PayrollEntry] = []
             counter = cls.objects.all().count()
             for employee in employees:
                 counter += 1
-                enries.append(
+                entries.append(
                     PayrollEntry(
                         payroll_entry_id=counter,
                         payroll=payroll,
                         user=employee,
                         state="A",
-                        created_by=currentuser,
+                        created_by=current_user,
                     )
                 )
-            cls.objects.bulk_create(enries)
+            cls.objects.bulk_create(entries)
         except IntegrityError as e:
             raise ValidationError(
                 "Uno  o mas empleados ya esta incluidos en esta nomina",

@@ -91,8 +91,7 @@ class PayrollViewSet(BaseProtectedViewSet):
 
         for field in data.keys():
             if field in Payroll.NON_UPDATEABLE_FIELDS:
-                raise PayloadValidationError(
-                    f"'{field}' is not allowed to be updated")
+                raise PayloadValidationError(f"'{field}' is not allowed to be updated")
             if field not in Payroll.ALLOWED_FIELDS:
                 raise PayloadValidationError(f"'{field}' is not allowed")
 
@@ -130,8 +129,7 @@ class PayrollViewSet(BaseProtectedViewSet):
         if not condition:
             raise PayloadValidationError("condition es requerido")
 
-        payroll = Payroll.objects.filter(
-            simple_query_filter(condition)).first()
+        payroll = Payroll.objects.filter(simple_query_filter(condition)).first()
         if not payroll:
             raise PayloadValidationError(
                 "No se encontro ningun resultado con la condition"
@@ -197,11 +195,9 @@ class PayrollViewSet(BaseProtectedViewSet):
             raise PayloadValidationError("Condition must be a dictionary")
 
         if not condition.get("PAYROLL_ID"):
-            raise PayloadValidationError(
-                "Payroll ID is required in the condition")
+            raise PayloadValidationError("Payroll ID is required in the condition")
 
-        payroll = Payroll.objects.filter(
-            simple_query_filter(condition)).first()
+        payroll = Payroll.objects.filter(simple_query_filter(condition)).first()
         if not payroll:
             raise NotFound("Payroll with the provided condition not found")
 
@@ -250,16 +246,13 @@ class PayrollViewSet(BaseProtectedViewSet):
         if not condition:
             raise PayloadValidationError("condition es requerido.")
 
-        payroll = Payroll.objects.filter(
-            simple_query_filter(condition)).first()
+        payroll = Payroll.objects.filter(simple_query_filter(condition)).first()
         if not payroll:
-            raise APIException(
-                "Any payroll was found with the given condition")
+            raise APIException("Any payroll was found with the given condition")
 
         data = model_to_dict(payroll)
 
-        serializer = PayrollSerializer(
-            payroll, data, context={"request": request})
+        serializer = PayrollSerializer(payroll, data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
         return Response({"data": serializer.data})
@@ -277,8 +270,7 @@ class PayrollViewSet(BaseProtectedViewSet):
                 "No se encontro ninguna nómina acitiva y pendiente de pago."
             )
 
-        serializer = PayrollInfoSerializer(
-            payroll, data=model_to_dict(payroll))
+        serializer = PayrollInfoSerializer(payroll, data=model_to_dict(payroll))
         serializer.is_valid(raise_exception=False)
 
         return Response({"data": serializer.data})
@@ -306,8 +298,7 @@ class PayrollViewSet(BaseProtectedViewSet):
         paginator = PaginationSerializer(request=request)
         page = paginator.paginate_queryset(entries.distinct(), request)
 
-        seriazer = PayrollEntrySerializer(
-            page, many=True, context={"request": request})
+        seriazer = PayrollEntrySerializer(page, many=True, context={"request": request})
 
         return paginator.get_paginated_response(seriazer.data)
 
@@ -368,7 +359,7 @@ class PayrollViewSet(BaseProtectedViewSet):
             )
         if entry.status:
             raise APIException(
-                "No puede Inhabolidar esta entrada de nómina por que ya\
+                "No puede Inhabilitar esta entrada de nómina por que ya\
                     se le ha realizado el pago correspondiente al periodo actual"
             )
 
@@ -381,15 +372,15 @@ class PayrollViewSet(BaseProtectedViewSet):
             user=request.user,
             action=2,
             message=f"@{request.user.username} {state_str} a @{
-                entry.user.username} de la nómináde este periodo",
+                entry.user.username} de la nómina de este periodo",
         )
 
-        return Response({"message": "Entrada de nómina actualizada con exito"})
+        return Response({"message": "Entrada de nómina actualizada con éxito"})
 
     @viewException
     def create_adjustment(self, request: Request):
         """
-        Add justment to payroll entry\n
+        Add adjustment to payroll entry\n
         `METHOD` POST
         """
         data = dict_key_to_lower(request.data)
@@ -408,8 +399,7 @@ class PayrollViewSet(BaseProtectedViewSet):
 
         payroll = Payroll.objects.get(payroll_id=payroll_id)
         if not payroll:
-            raise PayloadValidationError(
-                f"Nomina con id '{payroll_id}' No encontrada")
+            raise PayloadValidationError(f"Nomina con id '{payroll_id}' No encontrada")
 
         payroll_entry = PayrollEntry.objects.filter(
             Q(user=user) & Q(payroll_id=payroll_id)
@@ -511,8 +501,7 @@ class PayrollViewSet(BaseProtectedViewSet):
         paginator = PaginationSerializer(request=request)
         page = paginator.paginate_queryset(adjustments, request)
 
-        serializer = AdjustmentSerializer(
-            page, many=True, context={"request": request})
+        serializer = AdjustmentSerializer(page, many=True, context={"request": request})
 
         return paginator.get_paginated_response(serializer.data)
 
@@ -528,8 +517,7 @@ class PayrollViewSet(BaseProtectedViewSet):
         if not condition:
             raise PayloadValidationError("condition is required.")
         if not isinstance(condition, dict):
-            raise PayloadValidationError(
-                "The condition give an invalide format.")
+            raise PayloadValidationError("The condition give an invalide format.")
 
         deductions = Deductions.objects.filter(simple_query_filter(condition))
 
