@@ -198,7 +198,7 @@ class Payroll(BaseModels):
                     detail = PayrollPaymentDetail(
                         payroll=entry.payroll,
                         payroll_entry=entry,
-                        concept=concept,
+                        concept=leave.concept,
                         period=self.period,
                         concept_amount=leave.amount,
                         state=PayrollPaymentDetail.ACTIVE,

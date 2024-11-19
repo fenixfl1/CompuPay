@@ -476,6 +476,23 @@ class UserViewSet(ViewSet):
         return Response({"data": serializer.data, "message": message})
 
     @viewException
+    def update_avatar(self, request: Request):
+        data = dict_key_to_lower(request.data)
+
+        username = data.get("username")
+        if not username:
+            raise PayloadValidationError("USERNAME is required")
+
+        user = User.objects.get(username=username)
+        if not user:
+            raise UserDoesNotExist("User not found.")
+
+        user.avatar = data.get("avatar", None)
+        user.save()
+
+        return Response({"message": "El avatar se actualizo con exito."})
+
+    @viewException
     def change_user_rol(self, request):
         """
         Assign a role to a user.\n
