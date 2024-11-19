@@ -165,7 +165,7 @@ class Payroll(BaseModels):
             total_overtime_amount = Decimal("0.0")
             total_hours = Decimal("0.0")
             overtimes = entry.get_employee_overtime()
-            if self.includes_overtime and overtime:
+            if self.includes_overtime and overtimes:
                 concept = overtimes.first().concept
                 for overtime in overtimes:
                     amount = overtime.get_amount()
