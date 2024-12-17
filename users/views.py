@@ -13,6 +13,9 @@ from rest_framework.authtoken.models import Token
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
 from helpers.exceptions import (
     PayloadValidationError,
     UserDoesNotExist,
@@ -61,6 +64,32 @@ class AuthenticationViewSet(ViewSet):
 
     permission_classes = [AllowAny]
 
+    @swagger_auto_schema(
+        operation_summary="User login",
+        operation_description="""
+        Authenticate a user with a valid username and password.
+        """,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["username", "password"],
+            properties={
+                "username": openapi.Schema(
+                    type=openapi.TYPE_STRING, description="Username of the user"
+                ),
+                "password": openapi.Schema(
+                    type=openapi.TYPE_STRING, description="User password"
+                ),
+                "remember": openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description="If true, the token expires in 30 days; otherwise, in 1 day",
+                ),
+            },
+        ),
+        responses={
+            200: "Login successful with user data and token",
+            400: "Invalid username or password",
+        },
+    )
     @viewException
     def login(self, request):
         """
@@ -76,12 +105,14 @@ class AuthenticationViewSet(ViewSet):
             raise UserException("Username and password are required")
 
         user = authenticate(username=username, password=password)
-
-        if user is not None:
-            if not user.is_staff and user.state != User.ACTIVE:
-                raise APIException("This user cannot access the system")
+        if user:
+            if user.is_staff is False or user.state != User.ACTIVE:
+                raise APIException(
+                    "Este usuario no tiene acceso al sistema. \
+                        Contacte al equipo de soporte técnico."
+                )
         else:
-            raise UserException("Invalid username or password")
+            raise UserException("Usuario y/o contraseña incorrectos.")
 
         token, _ = Token.objects.get_or_create(user=user)
 
@@ -641,7 +672,7 @@ class UserViewSet(ViewSet):
     @viewException
     def get_department_list(self, request: Request):
         """
-        This andpoint accepts a condition with any field in the mode `Department`
+        This endpoint accepts a condition with any field in the mode `Department`
         and return all data tha match with the given condition\n
         `METHOD` POST
         """
@@ -666,7 +697,6 @@ class UserViewSet(ViewSet):
     @viewException
     def generate_report(self, request: Request):
         conditions = request.data.get("condition", [])
-        fields = list_values_to_lower(request.data.get("fields", []))
         column_widths: list[int] = request.data.get("column_widths", [])
 
         if not conditions:
@@ -674,15 +704,23 @@ class UserViewSet(ViewSet):
         if not isinstance(conditions, list):
             raise PayloadValidationError("Invalid condition")
 
-        conditon, exclude_condition = advanced_query_filter(conditions)
+        condition, exclude_condition = advanced_query_filter(conditions)
 
-        users = User.objects.filter(conditon)
+        users = User.objects.filter(condition)
 
         for exclude in exclude_condition:
             users = users.exclude(**exclude)
 
+        serializer = UserReportSerializer(
+            users, many=True, context={"request": request}
+        )
+
         base64_pdf = user_reports.generate_user_report(
-            users, "Reporte de Usuarios", fields, column_widths
+            data=serializer.data,
+            user=f"{request.user.name} {request.user.last_name}",
+            title="Reporte de Usuarios",
+            column_widths=column_widths,
+            is_landscape=True,
         )
 
         return Response({"data": base64_pdf})
@@ -700,6 +738,22 @@ class MenuOptionsViewSet(ViewSet):
     permission_classes = [IsAuthenticated]
     authentication_classes = [TokenAuthentication]
 
+    @swagger_auto_schema(
+        operation_summary="Get Menu Options",
+        operation_description=(
+            "Return a list of menu options available for the authenticated user. "
+            "The response includes options based on the user's roles and direct permissions."
+        ),
+        request_body={},
+        responses={
+            200: openapi.Response(
+                "List of menu options",
+                MenuOptionsSerializer(many=True),
+            ),
+            401: "Unauthorized",
+            404: "User not found",
+        },
+    )
     @viewException
     def get_menu_options(self, request: Request):
         """
@@ -719,14 +773,14 @@ class MenuOptionsViewSet(ViewSet):
             Q(user_id=user_id) & Q(state=UserPermission.ACTIVE)
         ).values_list("id", flat=True)
 
-        opration_menu_options = OperationsMeneOptions.objects.filter(
+        operation_menu_options = OperationsMeneOptions.objects.filter(
             Q(user_permission_id__in=user_permissions)
             & Q(state=OperationsMeneOptions.ACTIVE)
         ).values_list("menu_option_id", flat=True)
 
         menu_options = MenuOptions.objects.filter(
             Q(
-                Q(menu_option_id__in=opration_menu_options)
+                Q(menu_option_id__in=operation_menu_options)
                 | Q(menuoptionxroles__rol_id__in=roles)
                 | Q(userpermission__user_id=user)
             )

@@ -12,29 +12,32 @@ from users.models import User, ActivityLog
 
 
 def generate_user_report(
-    query: QuerySet[User], title: str, fields: list[str], column_widths: list[int]
+    data: list[User],
+    title: str,
+    user: str,
+    column_widths: list[int],
+    is_landscape: bool = False,
 ) -> str:
     buffer = BytesIO()
-    pdf, buffer, page_width, y_position = template(buffer, title, "landscape")
-
-    report_fields = [
-        {"label": USER_COLUMN_TRANSLATIONS.get(field, field), "field": field}
-        for field in fields
-    ]
-
-    y_position = draw_table(
-        pdf, query, report_fields, y_position, column_widths, page_width
+    pdf, buffer, width, y_position = template(
+        buffer=buffer,
+        user=user,
+        title=title,
+        orientation="landscape" if is_landscape else "portrait",
     )
 
+    table = draw_table(
+        data=data,
+        column_widths=column_widths,
+    )
+
+    table.wrapOn(pdf, width, y_position)
+    table.drawOn(pdf, 50, y_position - len(data) * 15)
+
     pdf.save()
-
-    filename = re.sub(r"\s+", "_", title)
-    file_path = f"users/reports/{filename.lower()}.pdf"
-    with default_storage.open(file_path, "wb") as f:
-        f.write(buffer.getvalue())
-
-    buffer.seek(0)
-    base64_pdf = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    pdf_data = buffer.getvalue()
     buffer.close()
 
-    return base64_pdf
+    encoded_pdf = base64.b64encode(pdf_data).decode("utf-8")
+
+    return encoded_pdf

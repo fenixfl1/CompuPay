@@ -1,5 +1,8 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.admin.sites import AdminSite
+from django.shortcuts import redirect
+from django.urls import path, reverse
+from django.utils.html import format_html
 from helpers.admin import BaseModelAdmin, BaseModelInline
 from users.forms import (
     CustomCreationForm,
@@ -9,6 +12,8 @@ from users.forms import (
 )
 from users.models import (
     ActivityLog,
+    Bank,
+    BankAccount,
     Business,
     Department,
     MenuOptions,
@@ -20,9 +25,49 @@ from users.models import (
     PermissionsRoles,
     Roles,
     RolesUsers,
+    Termination,
     User,
     UserPermission,
 )
+
+
+def reset_password(request, user_id):
+    try:
+        print("*" * 75)
+        print(f"User: {user_id} \n Request: {request}")
+        print("*" * 75)
+        user = User.objects.get(user_id=user_id)
+        default_password = Parameters.objects.get(name="DEFAULT_PASSWORD").value
+
+        if not default_password:
+            messages.error(
+                request,
+                "No se encontró una contraseña por defecto en los parámetros.",
+            )
+            return redirect(request.META.get("HTTP_REFERER", ".."))
+
+        user.set_password(default_password)
+        user.save()
+
+        messages.success(
+            request,
+            f"La contraseña del usuario {user.username} ha sido restablecida a la contraseña por defecto.",
+        )
+    except User.DoesNotExist:
+        messages.error(request, "El usuario no existe.")
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        messages.error(request, f"Error al restablecer la contraseña: {e}")
+    return redirect(request.META.get("HTTP_REFERER", ".."))
+
+
+class RoleUserInline(admin.TabularInline):
+    model = RolesUsers
+    fk_name = "user_id"
+    fields = ("rol_id", "created_by")
+    verbose_name = "Asignación de Rol"
+    verbose_name_plural = "Asignaciones de Roles"
+    extra = 1
 
 
 class UserAdmin(BaseModelAdmin):
@@ -30,10 +75,11 @@ class UserAdmin(BaseModelAdmin):
     Custom user admin model for the admin site
     """
 
-    add_form = CustomCreationForm
+    # add_form = CustomCreationForm
     login_form = CustomAuthForm
     model = User
-    form = CustomUserChangeForm
+
+    inlines = [RoleUserInline]
 
     ordering = ("user_id",)
     display_name = "username"
@@ -50,6 +96,7 @@ class UserAdmin(BaseModelAdmin):
         "is_staff",
         "is_superuser",
         "state",
+        "reset_password",
     )
     list_editable = (
         "department",
@@ -61,18 +108,24 @@ class UserAdmin(BaseModelAdmin):
     filter_horizontal = ()
 
     fieldsets = (
-        (None, {"fields": ("email", "password")}),
+        (None, {"fields": ("username", "email", "password")}),
         (
-            "Personal info",
+            "Información Personal",
             {
                 "fields": (
-                    "username",
+                    "name",
+                    "last_name",
                     "avatar",
                     "is_superuser",
-                )
+                    "is_staff",
+                    "created_by",
+                ),
             },
         ),
-        ("Important dates", {"fields": ("last_login",)}),
+        (
+            "Información laboral",
+            {"fields": ("department", "supervisor", "salary")},
+        ),
     )
 
     list_editable = ("is_staff", "is_superuser", "state")
@@ -88,6 +141,26 @@ class UserAdmin(BaseModelAdmin):
         return f"{states[obj.state]}"
 
     get_state.short_description = "Estado"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<int:user_id>/reset-password/",
+                self.admin_site.admin_view(reset_password),
+                name="reset_password",
+            ),
+        ]
+        return custom_urls + urls
+
+    def reset_password(self, obj: User):
+        return format_html(
+            '<a class="button" href="{}">Restablecer Contraseña</a>',
+            reverse("admin:reset_password", args=[obj.pk]),
+        )
+
+    reset_password.short_description = "Restablecer contraseña"
+    reset_password.allow_tags = True
 
     def __init__(
         self, model: type, admin_site: AdminSite | None, state_field="is_active"
@@ -132,7 +205,7 @@ class MenuOptionAdmin(BaseModelAdmin):
 
 class PermissionsRolesAdmin(BaseModelAdmin):
     list_display = ("operation_id", "rol_id")
-    list_filter = ("state",)
+    list_filter = ("state", "rol_id")
 
 
 class PermissionsRolesInline(BaseModelInline):
@@ -209,6 +282,7 @@ class ParametersAdmin(BaseModelAdmin):
         "value",
     )
     list_filter = ("state",)
+    search_fields = ("name", "parameter_id")
 
     inlines = [ParameterMenuOptionInline]
 
@@ -255,6 +329,24 @@ class BusinessAdmin(BaseModelAdmin):
     list_display = ("business_id", "name", "rnc", "display_representative")
 
 
+class TerminationAdmin(BaseModelAdmin):
+    list_display = (
+        "termination_id",
+        "username",
+        "termination_type",
+        "reason",
+        "termination_date",
+    )
+
+
+class BankAccountAdmin(BaseModelAdmin):
+    list_display = ("username", "no_account", "bank", "account_type", "is_primary")
+
+
+class BankAdmin(BaseModelAdmin):
+    list_display = ("bank_id", "short_name", "name")
+
+
 admin.site.register(User, UserAdmin)
 admin.site.register(MenuOptions, MenuOptionAdmin)
 admin.site.register(Roles, RolesAdmin)
@@ -269,3 +361,6 @@ admin.site.register(PermissionsRoles, PermissionsRolesAdmin)
 admin.site.register(MenuOptionXRoles, MenuOptionXRolesAdmin)
 admin.site.register(ActivityLog, ActivityLogAdmin)
 admin.site.register(Business, BusinessAdmin)
+admin.site.register(Termination, TerminationAdmin)
+admin.site.register(BankAccount, BankAccountAdmin)
+admin.site.register(Bank, BankAdmin)

@@ -1,3 +1,4 @@
+import locale
 from datetime import datetime
 from decimal import Decimal
 from django.db.models import Q
@@ -14,6 +15,12 @@ from helpers.constants import (
 )
 from helpers.exceptions import get_traceback
 
+locale.setlocale(locale.LC_ALL, "es_DO.UTF-8")
+
+
+def currency_format(amount: Decimal | float) -> str:
+    return locale.currency(amount, symbol=False, grouping=True)
+
 
 def ordinal(number, language="es"):
     def ordinal_en(n):
@@ -26,15 +33,15 @@ def ordinal(number, language="es"):
 
     def ordinal_es(n):
         if n == 1:
-            return f"{n}ra"
+            return f"{n}ª"
         elif n == 3:
-            return f"{n}ra"
+            return f"{n}ª"
         elif n == 2:
-            return f"{n}da"
+            return f"{n}ª"
         elif n == 4:
-            return f"{n}ta"
+            return f"{n}ª"
         elif n == 5:
-            return f"{n}ta"
+            return f"{n}ª"
         else:
             return f"{n}º"
 
@@ -69,8 +76,7 @@ def dict_key_to_lower(data: dict | list[dict]) -> dict | list[dict]:
         elif isinstance(data, list):
             return [{k.lower(): v for k, v in item.items()} for item in data]
     except Exception as e:
-        raise APIException(
-            f"{e}. Raised in 'dict_key_to_lower()' function", 500) from e
+        raise APIException(f"{e}. Raised in 'dict_key_to_lower()' function", 500) from e
 
 
 def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
@@ -169,8 +175,7 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
             case "bool":
                 try:
                     if not isinstance(value, bool):
-                        raise ValueError(
-                            f"Invalid boolean format for field '{field}'")
+                        raise ValueError(f"Invalid boolean format for field '{field}'")
                     value = bool(value)
                 except Exception as exc:
                     raise APIException(
@@ -180,12 +185,10 @@ def advanced_query_filter(conditions: list[dict]) -> tuple[Q, list[dict]]:
                 try:
                     if not isinstance(value, list):
                         raise ValueError(
-                            MSG_INVALID_VALUE % {
-                                "data_type": "list", "field": field}
+                            MSG_INVALID_VALUE % {"data_type": "list", "field": field}
                         )
                     if operator not in ["IN", "NOT IN", "BETWEEN"]:
-                        raise ValueError(
-                            MSG_INVALID_OPERATOR_FOR_LIST % operator)
+                        raise ValueError(MSG_INVALID_OPERATOR_FOR_LIST % operator)
                 except ValueError as exc:
                     raise APIException(
                         detail=str(exc), code=INVALID_LIST_VALUE
@@ -234,8 +237,7 @@ def get_month_day_name(int_value: int, opt: str) -> str:
     Returns:
         str: The name of the month or day.
     """
-    days = ["Lunes", "Martes", "Miércoles",
-            "Jueves", "Viernes", "Sábado", "Domingo"]
+    days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     months = [
         "Enero",
         "Febrero",
@@ -270,7 +272,7 @@ def inrange(n, range1, range2) -> bool:
 
 
 def time_to_decimal(time_str):
-    hours, minutes = map(int, time_str.split(':'))
+    hours, minutes = map(int, time_str.split(":"))
     decimal_time = hours + minutes / 60
     return decimal_time
 
@@ -307,3 +309,22 @@ def elapsed_time(date: datetime):
         return f"hace {int(months)} mes(es)"
 
     return f"hace {int(years)} año(s)"
+
+
+def format_date(date):
+    days = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    months = [
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ]
+    return f"{days[date.weekday()]} {date.day} de {months[date.month - 1]}"

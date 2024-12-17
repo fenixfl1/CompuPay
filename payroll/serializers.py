@@ -1,8 +1,9 @@
-from functools import reduce
+from decimal import Decimal, getcontext
 from django.forms import model_to_dict
 from django.db.models import Q
 from rest_framework import serializers
-from helpers.serializers import BaseModelSerializer
+from helpers.serializers import BaseModelSerializer, BaseReportModelSerializer
+from helpers.utils import currency_format
 from payroll.models import (
     Adjustment,
     DeductionXuser,
@@ -13,6 +14,9 @@ from payroll.models import (
     PayrollSettings,
 )
 from time_management.models import Overtime
+
+
+getcontext().prec = 2
 
 
 class PayrollInfoSerializer(BaseModelSerializer):
@@ -123,7 +127,7 @@ class PayrollEntrySerializer(BaseModelSerializer):
 
 
 class AdjustmentSerializer(BaseModelSerializer):
-    desc_type = serializers.SerializerMethodField()
+    desc_concept = serializers.CharField(source="concept.name")
     user = serializers.CharField(source="payroll_entry.user.full_name")
     username = serializers.CharField(source="payroll_entry.user.username")
     payroll_id = serializers.CharField(source="payroll_entry.payroll_id")
@@ -133,9 +137,6 @@ class AdjustmentSerializer(BaseModelSerializer):
     def get_desc_state(self, instance: Adjustment):
         values = dict(Adjustment.STATE_CHOICES)
         return values.get(instance.state, None)
-
-    def get_desc_type(self, instance: Adjustment):
-        return "Descuento" if instance.type == "D" else "Bono"
 
     class Meta:
         model = Adjustment
@@ -165,7 +166,9 @@ class PayrollHistorySerializer(BaseModelSerializer):
         return labels[instance.status]
 
     def get_entries(self, instance: Payroll):
-        entries = PayrollEntry.objects.filter(payroll=instance)
+        entries = PayrollEntry.objects.filter(
+            payroll=instance, state=PayrollEntry.ACTIVE
+        )
 
         serializer = PayrollEntryWithDetailSerializer(entries, many=True)
         return serializer.data
@@ -202,3 +205,105 @@ class PayrollPaymentDetailSerializer(BaseModelSerializer):
     class Meta:
         model = PayrollPaymentDetail
         fields = "__all__"
+
+
+class PayrollEntryReportSerializer(BaseReportModelSerializer):
+    id = serializers.CharField(source="payroll_entry_id")
+    nombre = serializers.CharField(source="user.full_name")
+    salario = serializers.SerializerMethodField()
+    estado = serializers.SerializerMethodField()
+    bonos = serializers.SerializerMethodField()
+    descuentos = serializers.SerializerMethodField()
+    isr = serializers.SerializerMethodField()
+    afp = serializers.SerializerMethodField()
+    sfs = serializers.SerializerMethodField()
+    horas_extras = serializers.SerializerMethodField()
+    vacaciones = serializers.SerializerMethodField()
+
+    def get_salario(self, instance: PayrollEntry):
+        return currency_format(instance.user.salary)
+
+    def get_vacaciones(self, instance: PayrollEntry):
+        vacations = instance.get_leaves().values_list("amount", flat=True)
+        return currency_format(sum(vacations))
+
+    def get_otros_descuentos(self, instance: PayrollEntry):
+        discounts = instance.get_leaves(False).values_list("amount", flat=True)
+        return sum(discounts)
+
+    def get_horas_extras(self, instance: PayrollEntry):
+        overtimes = instance.get_employee_overtime().values_list("rate", "hours")
+        total = sum(rate * hours for rate, hours in overtimes)
+        return currency_format(total)
+
+    def get_estado(self, instance: PayrollEntry):
+        return instance.get_status()
+
+    def get_isr(self, instance: PayrollEntry):
+        return currency_format(DeductionXuser.get_isr(instance.user))
+
+    def get_afp(self, instance: PayrollEntry):
+        return currency_format(DeductionXuser.get_afp(instance.user))
+
+    def get_sfs(self, instance: PayrollEntry):
+        amount = DeductionXuser.get_sfs(instance.user)
+        return currency_format(amount)
+
+    def get_bonos(self, instance: PayrollEntry):
+        bonus = Adjustment.calc_bonus(instance)
+        return currency_format(bonus)
+
+    def get_descuentos(self, instance: PayrollEntry):
+        discounts = Adjustment.calc_deduction(instance)
+        others = self.get_otros_descuentos(instance)
+        return currency_format(discounts + others)
+
+    class Meta:
+        model = PayrollEntry
+        fields = (
+            "id",
+            "nombre",
+            "salario",
+            "bonos",
+            "horas_extras",
+            "vacaciones",
+            "descuentos",
+            "isr",
+            "afp",
+            "sfs",
+            "estado",
+        )
+
+
+class PayrollPaymentReportSerializer(BaseReportModelSerializer):
+    id = serializers.CharField(source="payroll_entry_id")
+    estado = serializers.CharField(source="get_status")
+    details = serializers.SerializerMethodField()
+    empleado = serializers.SerializerMethodField()
+    sueldo_bruto = serializers.SerializerMethodField()
+
+    def get_sueldo_bruto(self, instance: PayrollEntry):
+        total = instance.user.salary / instance.payroll.get_config().periods
+        return currency_format(total)
+
+    def get_empleado(self, instance: PayrollEntry):
+        return repr(instance.user)
+
+    def get_details(self, instance: PayrollEntry):
+        obj = {}
+        details = PayrollPaymentDetail.objects.filter(payroll_entry=instance)
+        for detail in details:
+            obj[detail.concept.name] = (
+                f"{detail.comment or '' } {currency_format(detail.concept_amount)}"
+            )
+        return obj
+
+    class Meta:
+        model = PayrollEntry
+        fields = (
+            "id",
+            "empleado",
+            "estado",
+            "sueldo_bruto",
+            "details",
+        )

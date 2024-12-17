@@ -1,3 +1,5 @@
+# pylint: disable=no-member
+
 import locale
 import datetime
 from datetime import timedelta
@@ -13,7 +15,7 @@ from rest_framework.exceptions import APIException
 
 from helpers.exceptions import PayloadValidationError
 from helpers.models import BaseModels
-from helpers.utils import ordinal
+from helpers.utils import format_date, ordinal
 from time_management.models import Leaves, Overtime
 from users.models import User
 
@@ -29,7 +31,7 @@ class Payroll(BaseModels):
     `TABLE_NAME`: PAYROLL
     """
 
-    STATUS_CHOICES = (("P", "Pendiente"), ("F", "Finalzada"))
+    STATUS_CHOICES = (("P", "Pendiente"), ("F", "Finalizada"))
     PENDING = "P"
     DONE = "F"
 
@@ -53,15 +55,13 @@ class Payroll(BaseModels):
 
     def __str__(self):
         config = self.get_config()
-        # pylint: disable=no-member
         month = self.period_start.strftime("%B")
         if config.periods == 1:
             return f"Nómina de {month}"
-        return f"{ordinal(self.period)} nómina de {month}"
+        return f"{ordinal(self.period)} Nómina de {month.capitalize()}"
 
     def next_payment(self) -> str:
-        # pylint: disable=no-member
-        return f'{self.period_end.strftime("%A %d de %B")}'
+        return format_date(self.period_end).capitalize()
 
     @classmethod
     def get_config(cls) -> "PayrollSettings":
@@ -82,7 +82,7 @@ class Payroll(BaseModels):
 
         settings = Payroll.get_config()
         if not settings:
-            raise ValidationError("No se encontró una configuración de nómina acitva")
+            raise ValidationError("No se encontró una configuración de nómina activa")
 
         if existing_payrolls_in_month >= settings.periods:
             raise ValidationError(
@@ -146,18 +146,17 @@ class Payroll(BaseModels):
             adjustments = Adjustment.get_by_entry(entry)
             if adjustments:
                 for adjustment in adjustments:
-                    operator = "+" if adjustment.type == "B" else "-"
                     detail = PayrollPaymentDetail(
                         payroll=entry.payroll,
                         payroll_entry=entry,
                         concept=adjustment.concept,
                         period=self.period,
-                        concept_amount=Adjustment.get_amount(entry, adjustment.type),
+                        concept_amount=Adjustment.get_amount(entry, adjustment.concept),
                         state=PayrollPaymentDetail.ACTIVE,
                         created_by=request.user,
                         gross_salary=entry.user.salary,
                         comment=adjustment.description,
-                        operator=operator,
+                        operator=adjustment.concept.operator,
                     )
                     detail.save()
                     Adjustment.objects.update(state=Adjustment.COMPLETED)
@@ -315,7 +314,7 @@ class PayrollSettings(BaseModels):
     `TABLE_NAME:` PAYROLL_SETTINGS
     """
 
-    PERIOD_CHOISES = ((1, "Mensual"), (2, "Quincenal"), (4, "Semanal"))
+    PERIOD_CHOICES = ((1, "Mensual"), (2, "Quincenal"), (4, "Semanal"))
     DEDUCTION_PERIOD_CHOICES = (
         (1, "Primero"),
         (2, "Segundo"),
@@ -323,7 +322,7 @@ class PayrollSettings(BaseModels):
         (4, "Cuarto"),
     )
 
-    periods = models.IntegerField(default=1, choices=PERIOD_CHOISES)
+    periods = models.IntegerField(default=1, choices=PERIOD_CHOICES)
     autopay = models.BooleanField(default=False)
     deduction_period = models.IntegerField(
         default=2,
@@ -439,18 +438,19 @@ class Adjustment(BaseModels):
     `TABLE_NAME`: ADJUSTMENT
     """
 
-    COMPLETED = "S"
     STATE_CHOICES = (("A", "Activo"), ("I", "Inactivo"), ("S", "Saldada"))
     ADJUSTMENT_TYPE = [
         ("B", "Bono"),
         ("D", "Descuento"),
     ]
 
+    COMPLETED = "S"
+    PENDING = "A"
+
     state = models.CharField(
         default="A", max_length=1, null=False, choices=STATE_CHOICES
     )
     adjustment_id = models.AutoField(primary_key=True)
-    type = models.CharField(max_length=50, choices=ADJUSTMENT_TYPE)
     description = models.TextField(max_length=250)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     payroll_entry = models.ForeignKey(
@@ -477,7 +477,7 @@ class Adjustment(BaseModels):
     def calc_bonus(cls, entry: PayrollEntry) -> Decimal:
         bonus = Adjustment.objects.filter(
             Q(payroll_entry_id=entry.payroll_entry_id)
-            & Q(type="B")
+            & Q(concept__concept_id=4)
             & Q(state=Adjustment.ACTIVE)
         )
 
@@ -488,15 +488,19 @@ class Adjustment(BaseModels):
 
     @classmethod
     def calc_deduction(cls, entry: PayrollEntry) -> Decimal:
-        deduction = Adjustment.objects.filter(Q(payroll_entry=entry) & Q(type="D"))
+        deduction = Adjustment.objects.filter(
+            Q(payroll_entry=entry) & Q(concept__concept_id=5)
+        )
         total_deduction = Decimal("0.0")
         for deduc in deduction:
             total_deduction += deduc.amount
         return total_deduction
 
     @classmethod
-    def get_amount(cls, entry: PayrollEntry, _type: str) -> Decimal:
-        deduction = Adjustment.objects.filter(Q(payroll_entry=entry) & Q(type=_type))
+    def get_amount(cls, entry: PayrollEntry, concept: str) -> Decimal:
+        deduction = Adjustment.objects.filter(
+            Q(payroll_entry=entry) & Q(concept=concept)
+        )
         total_deduction = Decimal("0.0")
         for deduc in deduction:
             total_deduction += deduc.amount
@@ -642,7 +646,7 @@ class DeductionXuser(BaseModels):
                 & Q(deduction_id=user_deduction.deduction.deduction_id)
             ).first()
             percentage = deduction.percentage
-            return (user.salary * percentage) / 100
+            return Decimal((user.salary * percentage) / 100)
         return Decimal("0.0")
 
     @classmethod
@@ -655,7 +659,7 @@ class DeductionXuser(BaseModels):
                 & Q(deduction_id=user_deduction.deduction.deduction_id)
             ).first()
             percentage = deduction.percentage
-            return (user.salary * percentage) / 100
+            return Decimal((user.salary * percentage) / 100)
         return Decimal("0.0")
 
     @classmethod
@@ -686,7 +690,7 @@ class DeductionXuser(BaseModels):
             # Aplica el porcentaje correspondiente para calcular el ISR mensual
             isr = (annual_net_salary * percentage) / 12
 
-            return isr
+            return Decimal(isr)
         return Decimal("0.0")
 
     @classmethod
@@ -755,8 +759,17 @@ class PayrollPaymentDetail(BaseModels):
             return f"{self.concept.name} - {self.concept_amount}"
         return f"{self.payroll} - {self.payroll_entry}"
 
+    def __repr__(self):
+        return "{}"
+
     def get_concept_name(self) -> str:
-        return self.concept.name
+        try:
+            return self.concept.name
+        except AttributeError as e:
+            print("*" * 75)
+            print(f"Error: {e}\n Self: {self}")
+            print("*" * 75)
+            return ""
 
     def get_meployee_name(self):
         return self.payroll_entry.user.full_name()

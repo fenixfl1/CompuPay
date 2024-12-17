@@ -10,9 +10,19 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
+import locale
 import os
+import platform
+import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
+
+# Configura la localización global
+system_locale = (
+    "Spanish_Spain.1252" if platform.system() == "Windows" else "es_ES.UTF-8"
+)
+locale.setlocale(locale.LC_TIME, "Spanish_Spain.1252")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -54,6 +64,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
+    "drf_yasg",
     "django_celery_beat",
     "users",
     "tasks",
@@ -128,6 +139,14 @@ DATABASES = {
         "PORT": DB_PORT,
     }
 }
+
+if "test" in sys.argv:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": ":memory:",
+        }
+    }
 
 
 # Password validation

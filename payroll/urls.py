@@ -24,7 +24,13 @@ get_payroll_history = views.PayrollViewSet.as_view({"post": "get_payroll_history
 process_partial_payroll = views.PayrollViewSet.as_view(
     {"post": "process_partial_payroll"}
 )
+payment_history_report = views.PayrollViewSet.as_view(
+    {"post": "payment_history_report"}
+)
+get_history_report = views.PayrollViewSet.as_view({"get": "payment_history_report"})
 
+generate_report = views.PayrollViewSet.as_view({"post": "generate_report"})
+dynamic_report = views.PayrollViewSet.as_view({"post": "generate_dynamic_report"})
 
 urlpatterns = [
     path(f"{BASE_PAYROLL_PATH}create_payroll/", create_payroll),
@@ -44,6 +50,17 @@ urlpatterns = [
     path(f"{BASE_PAYROLL_PATH}get_payroll_info/", get_payroll_info),
     path(f"{BASE_PAYROLL_PATH}process_partial_payroll/", process_partial_payroll),
     path(f"{BASE_PAYROLL_PATH}get_payroll_history", get_payroll_history),
+    path(f"{BASE_PAYROLL_PATH}generate_report/<str:rp_name>/", dynamic_report),
+    path(
+        f"{BASE_PAYROLL_PATH}generate_report/<str:rp_name>/<str:entry_id>",
+        dynamic_report,
+    ),
+    # path(f"{BASE_PAYROLL_PATH}generate_report/", generate_report),
+    # path(f"{BASE_PAYROLL_PATH}payment_history_report/", payment_history_report),
+    # path(
+    #     f"{BASE_PAYROLL_PATH}get_history_report/<int:payroll_entry_id>",
+    #     get_history_report,
+    # ),
 ]
 
 urlpatterns = format_suffix_patterns(urlpatterns)

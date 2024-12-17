@@ -3,6 +3,7 @@ from datetime import datetime
 from django.db import models
 from django.db.models import Max, Q, Manager
 from django.forms import ValidationError
+from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.html import format_html
 from django.contrib.contenttypes.fields import GenericForeignKey
@@ -228,6 +229,9 @@ class User(AbstractBaseUser):
 
     def __str__(self):
         return f"@{self.username}"
+
+    def __repr__(self):
+        return f"{self.name} {self.last_name}"
 
     def has_perm(self, _app_label: str) -> bool:
         return self.is_staff and self.is_superuser
@@ -942,6 +946,7 @@ class Business(BaseUsersModels):
     business_id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, null=False, blank=False)
     rnc = models.CharField(max_length=11)
+    logo = models.TextField(null=True, blank=True)
     representative = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -963,3 +968,114 @@ class Business(BaseUsersModels):
         return f"{self.representative.name} {self.representative.last_name}"
 
     display_representative.short_description = "Representative"
+
+
+class Termination(BaseUsersModels):
+    """
+    This model is used to store the terminations
+    `TABLE NAME`: TERMINATION
+    """
+
+    TERMINATION_TYPES = (("D", "Despedido"), ("R", "Renunciado"), ("F", "Fin contrato"))
+    termination_id = models.AutoField(primary_key=True)
+    username = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=False,
+        blank=False,
+        related_name="%(class)s_username",
+        db_column="username",
+        to_field="username",
+    )
+    termination_type = models.CharField(max_length=1, choices=TERMINATION_TYPES)
+    reason = models.TextField()
+    termination_date = models.DateField()
+
+    def __str__(self):
+        return f"{self.username} - {self.get_termination_type_display()} ({self.termination_date})"
+
+    def is_resignation(self):
+        return self.termination_type == "R"
+
+    def is_dismissal(self):
+        return self.termination_type == "D"
+
+    def clean(self):
+        self.username.state = self.username.INACTIVE
+        self.username.is_staff = False
+        self.username.is_superuser = False
+        self.username.save()
+
+    class Meta:
+        db_table = "TERMINATION"
+        verbose_name = "Finalización de contrato"
+        verbose_name_plural = "Finalización de contratos"
+
+
+class Bank(BaseUsersModels):
+    bank_id = models.AutoField(primary_key=True)
+    name = models.CharField(
+        max_length=100, verbose_name="Nombre del banco", unique=True
+    )
+    short_name = models.CharField(
+        max_length=50, verbose_name="Nombre corto", unique=True
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Activo")
+
+    def __str__(self):
+        return f"{self.name}"
+
+    class Meta:
+        db_table = "BANK"
+        verbose_name = "Banco"
+        verbose_name_plural = "Bancos"
+
+
+class BankAccount(BaseUsersModels):
+    """
+    `TABLE NAME`: BANK_ACCOUNT
+    """
+
+    ACCOUNT_TYPES = (("S", "Ahorro"), ("C", "Corriente"), ("N", "Nómina"))
+    account_id = models.AutoField(primary_key=True)
+    bank = models.ForeignKey(
+        Bank,
+        on_delete=models.PROTECT,
+        verbose_name="Banco",
+        related_name="%(class)s_bank",
+        db_column="bank",
+        null=True,
+        blank=True,
+    )
+    username = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=False,
+        blank=False,
+        related_name="%(class)s_username",
+        db_column="username",
+        to_field="username",
+    )
+    no_account = models.CharField(
+        max_length=20, unique=True, verbose_name="Número de cuenta"
+    )
+    account_type = models.CharField(
+        max_length=1, choices=ACCOUNT_TYPES, verbose_name="Tipo de cuenta"
+    )
+    is_primary = models.BooleanField(default=False, verbose_name="¿Cuenta principal?")
+
+    def __str__(self):
+        return f"{self.bank.name} - {self.no_account} ({self.account_type})"
+
+    def save(self, *args, **kwargs):
+        if self.is_primary:
+            BankAccount.objects.filter(username=self.username, is_primary=True).exclude(
+                account_id=self.account_id
+            ).update(is_primary=False)
+
+        super().save(*args, **kwargs)
+
+    class Meta:
+        db_table = "BANK_ACCOUNT"
+        verbose_name = "Cuenta Bancaria"
+        verbose_name_plural = "Cuentas Bancarias"

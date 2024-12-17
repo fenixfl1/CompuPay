@@ -62,8 +62,10 @@ class PaginationSerializer(PageNumberPagination):
             try:
                 page = paginator.page(page_number)
             except InvalidPage as exc:
-                raise NotFound(f"Invalid page ({page_number}): {
-                               str(exc)}") from exc
+                raise NotFound(
+                    f"Invalid page ({page_number}): {
+                               str(exc)}"
+                ) from exc
 
             # pylint: disable=W0201
             self.page = page
@@ -165,7 +167,7 @@ class DynamicFieldsModelSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         # Don't pass the 'fields' arg up to the superclass
-        fields = kwargs.pop('fields', None)
+        fields = kwargs.pop("fields", None)
 
         # Instantiate the superclass normally
         super().__init__(*args, **kwargs)
@@ -176,3 +178,39 @@ class DynamicFieldsModelSerializer(serializers.ModelSerializer):
             existing = set(self.fields)
             for field_name in existing - allowed:
                 self.fields.pop(field_name)
+
+
+class BaseReportModelSerializer(serializers.ModelSerializer):
+    """
+    This is the base serializer for report serializers in the project.
+    It includes a method to capitalize te names and replace _ for spaces.
+    """
+
+    def __init__(self, instance=None, data=None, fields=None, **kwargs):
+        super().__init__(instance, data, **kwargs)
+        if fields:
+            self.Meta.fields = fields
+
+    def to_representation(self, instance):
+        """
+        Convert dictionary keys to title case and replace underscores with spaces
+        for frontend readability unless 'capitalize' in context is False.
+        """
+        ret = super().to_representation(instance)
+        capitalize = self.context.get("capitalize", True)
+
+        if capitalize:
+            result = {
+                k.upper() if len(k) <= 3 else k.replace("_", " ").title(): v
+                for k, v in ret.items()
+            }
+        else:
+            result = ret  # Keep keys as they are if capitalization is disabled
+
+        return result
+
+    def is_valid(self, *, raise_exception=False):
+        try:
+            return super().is_valid(raise_exception=raise_exception)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError(exc.detail, code=exc.status_code)

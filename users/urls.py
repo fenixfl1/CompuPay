@@ -1,10 +1,26 @@
 from django.urls import path
+from rest_framework import permissions
 from rest_framework.urlpatterns import format_suffix_patterns
+from drf_yasg.views import get_schema_view
+from drf_yasg import openapi
 
 from users import views
 from core.settings import PATH_BASE
 
 BASE_PATH_USERS = f"{PATH_BASE}users/"
+
+schema_view = get_schema_view(
+    openapi.Info(
+        title="API Documentation",
+        default_version="v1.0.0",
+        description="Detailed documentation for Authentication APIs",
+        terms_of_service="https://www.example.com/terms/",
+        contact=openapi.Contact(email="support@example.com"),
+        license=openapi.License(name="MIT License"),
+    ),
+    public=False,
+    permission_classes=(permissions.IsAuthenticated,),
+)
 
 login_user = views.AuthenticationViewSet.as_view({"post": "login"})
 logout_user = views.AuthenticationViewSet.as_view({"get": "logout"})
@@ -23,10 +39,10 @@ remove_role = views.UserViewSet.as_view({"put": "remove_role"})
 get_roles_list = views.UserViewSet.as_view({"post": "get_roles_list"})
 change_password = views.UserViewSet.as_view({"put": "change_password"})
 get_department_list = views.UserViewSet.as_view({"post": "get_department_list"})
-generate_report = views.UserViewSet.as_view({"post": "generate_report"})
 check_username = views.UserViewSet.as_view({"post": "check_username"})
 check_identity_document = views.UserViewSet.as_view({"post": "check_identity_document"})
 update_avatar = views.UserViewSet.as_view({"put": "update_avatar"})
+generate_report = views.UserViewSet.as_view({"post": "generate_report"})
 
 
 urlpatterns = [
@@ -45,10 +61,10 @@ urlpatterns = [
     path(f"{BASE_PATH_USERS}remove_role/", remove_role),
     path(f"{BASE_PATH_USERS}get_roles_list", get_roles_list),
     path(f"{BASE_PATH_USERS}get_department_list/", get_department_list),
-    path(f"{BASE_PATH_USERS}generate_report/", generate_report),
     path(f"{BASE_PATH_USERS}check_username/", check_username),
     path(f"{BASE_PATH_USERS}check_identity_document/", check_identity_document),
     path(f"{BASE_PATH_USERS}update_avatar/", update_avatar),
+    path(f"{BASE_PATH_USERS}generate_report/", generate_report),
 ]
 
 urlpatterns = format_suffix_patterns(urlpatterns)

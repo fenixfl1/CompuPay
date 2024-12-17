@@ -2,7 +2,12 @@ from rest_framework import serializers
 from rest_framework.request import Request
 from django.db.models import Q
 
-from helpers.serializers import BaseModelSerializer, DynamicFieldsModelSerializer
+from helpers.serializers import (
+    BaseModelSerializer,
+    BaseReportModelSerializer,
+    DynamicFieldsModelSerializer,
+)
+from helpers.utils import currency_format
 from payroll.models import DeductionXuser
 from users.models import (
     MenuOptions,
@@ -193,14 +198,14 @@ class MenuOptionsSerializer(BaseModelSerializer):
             Q(user_id=user.user_id) & Q(state=UserPermission.ACTIVE)
         ).values_list("id", flat=True)
 
-        opration_menu_options = OperationsMeneOptions.objects.filter(
+        operation_menu_options = OperationsMeneOptions.objects.filter(
             Q(user_permission_id__in=user_permissions)
             & Q(state=OperationsMeneOptions.ACTIVE)
         ).values_list("menu_option_id", flat=True)
 
         menu_options = MenuOptions.objects.filter(
             Q(
-                Q(menu_option_id__in=opration_menu_options)
+                Q(menu_option_id__in=operation_menu_options)
                 | Q(menuoptionxroles__rol_id__in=roles)
                 | Q(userpermission__user_id=user)
             )
@@ -218,28 +223,32 @@ class MenuOptionsSerializer(BaseModelSerializer):
         )
 
     def get_parameters(self, instance: MenuOptions):
-        childrens = MenuOptions.objects.filter(parent_id=instance.menu_option_id)
-        if childrens:
+        children = MenuOptions.objects.filter(parent_id=instance.menu_option_id)
+        if children:
             return None
+
         params_x_menu = ParametersXMenuOptions.objects.filter(
             Q(option_id=instance.menu_option_id)
             & Q(state=ParametersXMenuOptions.ACTIVE)
         ).values_list("parameter_id", flat=True)
+
         parameters = Parameters.objects.filter(parameter_id__in=params_x_menu)
         serializer = ParametersSerializer(parameters, many=True)
         output = {}
 
         for parameter in serializer.data:
             output[parameter["NAME"]] = parameter["VALUE"]
+
         return output
 
-    def get_operations(self, instance: MenuOptions | dict):
+    def get_operations(self, instance: MenuOptions):
+        request: Request = self.context.get("request", None)
 
         operations_mene_options = OperationsMeneOptions.objects.filter(
-            menu_option_id=instance.menu_option_id
+            Q(menu_option_id=instance.menu_option_id)
+            & Q(user_permission_id__user_id=request.user)
+            & Q(state=OperationsMeneOptions.ACTIVE)
         ).values_list("user_permission_id__operation_id__operation_id", flat=True)
-
-        request: Request = self.context.get("request", None)
 
         roles_id = []
         if request:
@@ -288,8 +297,79 @@ class ParametersSerializer(BaseModelSerializer):
         fields = "__all__"
 
 
-class UserReportSerializer(DynamicFieldsModelSerializer):
+class UserReportSerializer(BaseReportModelSerializer):
+    """
+    Serializer for the user model.
+    """
+
+    id = serializers.CharField(source="user_id")
+    nombre = serializers.CharField(source="full_name")
+    usuario = serializers.CharField(source="username")
+    correo = serializers.CharField(source="email")
+    # telefono = serializers.SerializerMethodField()
+    doc_identidad = serializers.SerializerMethodField()
+    rol = serializers.SerializerMethodField()
+    salario = serializers.SerializerMethodField()
+    # genero = serializers.SerializerMethodField()
+    supervisor = serializers.SerializerMethodField()
+    departamento = serializers.SerializerMethodField()
+
+    def get_departamento(self, obj: User):
+        if obj.department:
+            return obj.department.name
+        return None
+
+    def get_supervisor(self, instance: User | dict):
+        if isinstance(instance, User):
+            if instance.supervisor:
+                supervisor = instance.supervisor
+                return f"{supervisor.name} {supervisor.last_name}" or ""
+        return ""
+
+    def get_genero(self, instance: User | dict):
+        if isinstance(instance, User):
+            genders = dict(User.GENDER_CHOICES)
+            return genders.get(instance.gender, "")
+        return instance.get("gender", "")
+
+    def get_salario(self, instance: User):
+        return currency_format(instance.salary or 0)
+
+    def get_rol(self, instance: User):
+        if isinstance(instance, dict):
+            return instance.get("roles", [])
+        roles_user = RolesUsers.objects.filter(
+            Q(user_id=instance.user_id) & Q(state=RolesUsers.ACTIVE)
+        )
+        role = Roles.objects.filter(
+            rol_id__in=roles_user.values_list("rol_id", flat=True)
+        ).first()
+
+        if role:
+            return role.name
+
+        return ""
+
+    def get_doc_identidad(self, instance: User):
+        doc = instance.identity_document
+        return f"{doc[:3]}-{doc[3:10]}-{doc[10:]}"
+
+    def get_telefono(self, instance: User):
+        phone = instance.phone
+        return f"({phone[:3]}) {phone[3:7]}-{phone[7:]}"
 
     class Meta:
         model = User
-        fields = "__all__"
+        fields = (
+            "id",
+            "nombre",
+            "doc_identidad",
+            "usuario",
+            "correo",
+            # "telefono",
+            "rol",
+            "salario",
+            # "genero",
+            "supervisor",
+            "departamento",
+        )

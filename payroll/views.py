@@ -16,15 +16,23 @@ from helpers.utils import (
     dict_key_to_lower,
     simple_query_filter,
 )
-from payroll.models import Adjustment, Deductions, Payroll, PayrollEntry
+from payroll.models import Adjustment, Concept, Deductions, Payroll, PayrollEntry
+from payroll.reports import PayrollRepostService
+from payroll._reports.payroll_report import (
+    generate_payroll_report,
+    payroll_entries_payment,
+)
 from payroll.serializers import (
     AdjustmentSerializer,
     DeductionSerializer,
+    PayrollEntryReportSerializer,
     PayrollEntrySerializer,
     PayrollHistorySerializer,
     PayrollInfoSerializer,
+    PayrollPaymentReportSerializer,
     PayrollSerializer,
 )
+from payroll.services import PayrollService
 from users.models import ActivityLog
 
 
@@ -75,7 +83,7 @@ class PayrollViewSet(BaseProtectedViewSet):
                 instance=payroll,
                 user=request.user,
                 action=1,
-                message=f"{request.user.username} regisro la {str(payroll)}",
+                message=f"@{request.user.username} registro la {str(payroll)}",
             )
         except AttributeError:
             pass
@@ -113,7 +121,7 @@ class PayrollViewSet(BaseProtectedViewSet):
             instance=payroll,
             user=request.user,
             action=2,
-            message=f"{request.user.username} acutualizo la {str(payroll)}",
+            message=f"@{request.user.username} actualizo la {str(payroll)}",
         )
 
         return Response(
@@ -132,11 +140,12 @@ class PayrollViewSet(BaseProtectedViewSet):
         payroll = Payroll.objects.filter(simple_query_filter(condition)).first()
         if not payroll:
             raise PayloadValidationError(
-                "No se encontro ningun resultado con la condition"
+                "No se encontró ningún resultado con la condition"
             )
 
-        payroll.process_payroll(request)
-        Payroll.update(request, payroll, status=Payroll.DONE)
+        service = PayrollService(payroll, request)
+
+        service.process_payroll(users_id=condition.get("users", []))
 
         return Response({"message": "Nómina procesada exitosamente"})
 
@@ -144,7 +153,7 @@ class PayrollViewSet(BaseProtectedViewSet):
     def process_partial_payroll(self, request: Request):
         """
         TThis endpoint is used to process partial payroll,
-        meaning you can choose which employes you wnat to pay\n
+        meaning you can choose which employs you want to pay\n
         `METHOD` POST
         """
         condition: dict = request.data.get("condition", {})
@@ -173,12 +182,9 @@ class PayrollViewSet(BaseProtectedViewSet):
 
         users = entries.values_list("user__user_id", flat=True)
 
-        payroll.process_payroll(request, users)
+        service = PayrollService(payroll, request)
 
-        if not PayrollEntry.objects.filter(
-            Q(state=PayrollEntry.ACTIVE) & Q(status=False)
-        ).exists():
-            Payroll.update(request, payroll, status=Payroll.DONE)
+        service.process_payroll(users)
 
         return Response({"message": "Entradas de nomina procesadas exitosamente"})
 
@@ -267,7 +273,7 @@ class PayrollViewSet(BaseProtectedViewSet):
         payroll = Payroll.objects.latest("created_at")
         if not payroll:
             raise APIException(
-                "No se encontro ninguna nómina acitiva y pendiente de pago."
+                "No se encontró ninguna nómina activa y pendiente de pago."
             )
 
         serializer = PayrollInfoSerializer(payroll, data=model_to_dict(payroll))
@@ -298,9 +304,11 @@ class PayrollViewSet(BaseProtectedViewSet):
         paginator = PaginationSerializer(request=request)
         page = paginator.paginate_queryset(entries.distinct(), request)
 
-        seriazer = PayrollEntrySerializer(page, many=True, context={"request": request})
+        serializer = PayrollEntrySerializer(
+            page, many=True, context={"request": request}
+        )
 
-        return paginator.get_paginated_response(seriazer.data)
+        return paginator.get_paginated_response(serializer.data)
 
     @viewException
     def create_payroll_entry(self, request: Request):
@@ -332,7 +340,7 @@ class PayrollViewSet(BaseProtectedViewSet):
             instance=entries,
             user=request.user,
             action=1,
-            message=f"{request.user.username} agregó a {
+            message=f"@{request.user.username} agregó a {
                 entries.count()} a la {str(payroll)}",
         )
         return Response({"message": "Entradas de nomina registradas exitosamente"})
@@ -412,21 +420,20 @@ class PayrollViewSet(BaseProtectedViewSet):
             )
 
         data["payroll_entry"] = payroll_entry
+        data["concept"] = Concept.objects.get(concept_id=data.get("concept"))
 
         adjustment = Adjustment(**data)
-        adjustment = adjustment.create_adjustment(request, **data)
-
-        adjustment_type = "DESCUENTO" if adjustment.type == "D" else "BONO"
+        adjustment: Adjustment = adjustment.create_adjustment(request, **data)
 
         ActivityLog.register_activity(
             instance=adjustment,
             user=request.user,
             action=1,
             message=f"@{request.user.username} agrego un {
-                adjustment_type} al usuario @{username}",
+                adjustment.concept.name} al usuario @{username}",
         )
 
-        return Response({"message": "Registro completado con exito."})
+        return Response({"message": "Registro completado con éxito."})
 
     @viewException
     def update_adjustment(self, request: Request):
@@ -436,8 +443,8 @@ class PayrollViewSet(BaseProtectedViewSet):
         """
         data = dict_key_to_lower(request.data)
 
-        _type = data.get("type", None)
-        adjustemt_type = "Bono" if _type == "B" else "Descuento"
+        concept = data.get("concept", None)
+        concept = Concept.objects.get(concept_id=concept)
 
         adjustment_id = data.get("adjustment_id", None)
         if not adjustment_id:
@@ -456,32 +463,32 @@ class PayrollViewSet(BaseProtectedViewSet):
             Q(user__username=username) & Q(payroll=payroll)
         ).first()
 
-        adjustemt = Adjustment.objects.filter(
+        adjustment = Adjustment.objects.filter(
             Q(adjustment_id=adjustment_id) & Q(payroll_entry=payroll_entry)
         ).first()
 
-        if not adjustemt:
+        if not adjustment:
             raise NotFound(
-                f"No se encontro ningun {
-                    adjustemt_type} con id '{adjustment_id}'"
+                f"No se encontró ningún {
+                    concept.name} con id f'{adjustment_id}'"
             )
 
-        Adjustment.update(request, adjustemt, **data)
+        Adjustment.update(request, adjustment, **data)
 
         ActivityLog.register_activity(
-            instance=adjustemt,
+            instance=adjustment,
             user=request.user,
             action=2,
             message=f"@{request.user.username} actualizo un {
-                adjustemt_type} del usuario @{username}",
+                concept.name} del usuario @{username}",
         )
 
-        return Response({"message": f"{adjustemt_type} acualizado exitosamente."})
+        return Response({"message": f"{concept.name} acuatizado exitosamente."})
 
     @viewException
     def get_adjustments(self, request: Request):
         """ "
-        Get a list of ajustmets filtered by a condition\n
+        Get a list of adjustments filtered by a condition\n
         `METHOD` POST
         """
         conditions = request.data.get("condition", None)
@@ -508,7 +515,7 @@ class PayrollViewSet(BaseProtectedViewSet):
     @viewException
     def get_deduction_list(self, request: Request):
         """
-        This endpoind acept a condition with all fields in the model `Deductions`\n
+        This endpoint accept a condition with all fields in the model `Deductions`\n
         and return the deductions that match with the given condition
         `METHOD` POST
         """
@@ -526,3 +533,128 @@ class PayrollViewSet(BaseProtectedViewSet):
         )
 
         return Response({"data": serializer.data})
+
+    @viewException
+    def generate_dynamic_report(
+        self, request: Request, rp_name: str, entry_id: int = None
+    ):
+        base64_pdf = ""
+
+        rp_service = PayrollRepostService(
+            f"{request.user.name} {request.user.last_name}", True
+        )
+
+        conditions = request.data
+
+        if not conditions:
+            raise APIException("The condition are required")
+        if not isinstance(conditions, list):
+            raise APIException("Invalid condition")
+
+        condition, exclude = advanced_query_filter(conditions)
+
+        entries = PayrollEntry.objects.filter(condition)
+
+        for ex in exclude:
+            entries = entries.exclude(**ex)
+
+        payroll = entries.first().payroll
+
+        context = {"request": request}
+
+        match rp_name:
+            case "payment_detail":
+                entry = entries.first()
+                if entry_id:
+                    rp_title = f"Detalle de pago de {repr(entry.user)} \
+                        correspondiente a la {str(payroll)}"
+                else:
+                    rp_title = f"Detalles de pago correspondientes a la {str(payroll)}"
+
+                serializer = PayrollPaymentReportSerializer(
+                    entries, many=True, context=context
+                )
+                base64_pdf = rp_service.payment_details(serializer.data, rp_title)
+            case "current_payroll":
+                rp_title = str(payroll)
+                serializer = PayrollEntryReportSerializer(
+                    entries, many=True, context=context
+                )
+
+                base64_pdf = rp_service.payroll(serializer.data, rp_title)
+            case _:
+                raise APIException("Invalid report name.")
+
+        return Response({"data": base64_pdf})
+
+    @viewException
+    def generate_report(self, request: Request):
+        conditions = request.data.get("condition")
+
+        if not conditions:
+            raise APIException("The condition are required")
+        if not isinstance(conditions, list):
+            raise APIException("Invalid condition")
+
+        condition, exclude = advanced_query_filter(conditions)
+
+        entries = PayrollEntry.objects.filter(condition)
+
+        for ex in exclude:
+            entries = entries.exclude(**ex)
+
+        serializer = PayrollEntryReportSerializer(
+            entries, many=True, context={"request": request}
+        )
+
+        base64_pdf = generate_payroll_report(
+            data=serializer.data,
+            title=str(entries.first().payroll),
+            user=f"{request.user.name} {request.user.last_name}",
+            is_landscape=True,
+        )
+
+        return Response({"data": base64_pdf})
+
+    @viewException
+    def payment_history_report(self, request: Request, payroll_entry_id: int):
+        payroll_entries = None
+        title = ""
+        if request.method == "POST":
+            conditions = request.data.get("condition")
+
+            if not conditions:
+                raise APIException("The condition are required")
+            if not isinstance(conditions, list):
+                raise APIException("Invalid condition")
+
+            condition, exclude = advanced_query_filter(conditions)
+
+            payroll_entries = PayrollEntry.objects.filter(condition)
+
+            title = str(payroll_entries.first().payroll)
+
+            for ex in exclude:
+                payrolls = payrolls.exclude(**ex)
+        else:
+            payroll_entries = PayrollEntry.objects.filter(
+                payroll_entry_id=payroll_entry_id
+            )
+
+            entry = payroll_entries.first()
+
+            title = f"Detalle de pago de {repr(entry.user)} correspondiente a la {str(entry.payroll)}"
+
+        serializer = PayrollPaymentReportSerializer(
+            payroll_entries,
+            many=True,
+            context={"request": request, "capitalize": False},
+        )
+        base64_pdf = payroll_entries_payment(
+            data=serializer.data,
+            title=title,
+            is_landscape=True,
+            user=f"{request.user.name} {request.user.last_name}",
+        )
+
+        return Response({"data": base64_pdf})
