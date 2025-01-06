@@ -655,12 +655,10 @@ class UserViewSet(ViewSet):
         condition: list[dict] = request.data.get("condition", None)
 
         condition, exclude_condition = advanced_query_filter(condition)
-        roles = RolesUsers.objects.filter(condition)
+        roles = Roles.objects.filter(condition)
 
         for exclude in exclude_condition:
             roles.exclude(**exclude)
-
-        roles = Roles.objects.filter(rol_id__in=roles.values_list("rol_id", flat=True))
 
         paginator = PaginationSerializer(request=request)
         page = paginator.paginate_queryset(roles, request)
