@@ -112,7 +112,7 @@ class AuthenticationViewSet(ViewSet):
                         Contacte al equipo de soporte técnico."
                 )
         else:
-            raise UserException("Usuario y/o contraseña incorrectos.")
+            raise APIException("Usuario y/o contraseña incorrectos.")
 
         token, _ = Token.objects.get_or_create(user=user)
 

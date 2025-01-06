@@ -33,9 +33,9 @@ class LeaveSerializer(BaseModelSerializer):
 
 
 class OvertimeSerializer(BaseModelSerializer):
-    time = serializers.SerializerMethodField()
+    time = serializers.SerializerMethodField(required=False)
     total = serializers.DecimalField(
-        source="get_amount", decimal_places=2, max_digits=10
+        source="get_amount", decimal_places=2, max_digits=10, required=False
     )
 
     def get_time(self, instance: Overtime):

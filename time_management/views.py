@@ -5,7 +5,12 @@ from rest_framework.response import Response
 from helpers.common import BaseProtectedViewSet
 from helpers.exceptions import PayloadValidationError, viewException
 from helpers.serializers import DynamicSerializer, PaginationSerializer
-from helpers.utils import advanced_query_filter, dict_key_to_lower, list_values_to_lower, time_to_decimal
+from helpers.utils import (
+    advanced_query_filter,
+    dict_key_to_lower,
+    list_values_to_lower,
+    time_to_decimal,
+)
 from payroll.models import Concept
 from time_management.models import Leaves, Overtime
 from time_management.serializars import LeaveSerializer, OvertimeSerializer
@@ -21,11 +26,10 @@ class LeavesViewSet(BaseProtectedViewSet):
         if not data:
             raise PayloadValidationError("The body request is empty.")
 
-        username = data.get('employee', None)
+        username = data.get("employee", None)
         employee = User.objects.get(username=username)
         if not employee:
-            raise PayloadValidationError(
-                f'El empleado @{username} no encontrado')
+            raise PayloadValidationError(f"El empleado @{username} no encontrado")
 
         concept_id = data.pop("concept_id", None)
         if not concept_id:
@@ -33,11 +37,10 @@ class LeavesViewSet(BaseProtectedViewSet):
 
         concept = Concept.objects.get(concept_id=concept_id)
         if not concept:
-            raise PayloadValidationError(
-                f"concept with id '{concept_id}' not found.")
+            raise PayloadValidationError(f"concept with id '{concept_id}' not found.")
 
-        data['employee'] = employee
-        data['state'] = 'A'
+        data["employee"] = employee
+        data["state"] = "A"
         data["concept"] = concept
 
         Leaves.create(request, **data)
@@ -48,7 +51,7 @@ class LeavesViewSet(BaseProtectedViewSet):
     def update_leave(self, request: Request):
         data = dict_key_to_lower(request.data)
 
-        leave_id = data.get('leave_id', None)
+        leave_id = data.get("leave_id", None)
         if not leave_id:
             raise PayloadValidationError("LEAVE_ID is requerido")
 
@@ -62,8 +65,8 @@ class LeavesViewSet(BaseProtectedViewSet):
 
     @viewException
     def get_leaves(self, request: Request):
-        conditions = request.data.get('condition', None)
-        fields = list_values_to_lower(request.data.get('fields', None))
+        conditions = request.data.get("condition", None)
+        fields = list_values_to_lower(request.data.get("fields", None))
 
         if not conditions:
             raise PayloadValidationError("CONDIITON es requerido")
@@ -83,14 +86,12 @@ class LeavesViewSet(BaseProtectedViewSet):
         serializer = []
         if fields:
             if not isinstance(fields, list):
-                raise PayloadValidationError(
-                    "Invalid format for field 'FIELDS'")
+                raise PayloadValidationError("Invalid format for field 'FIELDS'")
             serializer = DynamicSerializer(
                 model=Leaves, fields=fields, instance=page, many=True
             )
         else:
-            serializer = LeaveSerializer(
-                page, many=True, context={"request": request})
+            serializer = LeaveSerializer(page, many=True, context={"request": request})
 
         return paginator.get_paginated_response(serializer.data)
 
@@ -100,7 +101,8 @@ class LeavesViewSet(BaseProtectedViewSet):
         leave = Leaves.objects.get(leave_id=leave_id)
         if not leave:
             raise PayloadValidationError(
-                f"No se encontró ningún registro con el id: '{leave_id}'")
+                f"No se encontró ningún registro con el id: '{leave_id}'"
+            )
 
         serializer = LeaveSerializer(leave, data=model_to_dict(leave))
         serializer.is_valid(raise_exception=True)
@@ -125,18 +127,17 @@ class OvertimeViewSet(BaseProtectedViewSet):
         if not employee:
             raise PayloadValidationError(f"Employee '@{username}' not found.")
 
-        concept_id = data.pop('concept_id', None)
+        concept_id = data.pop("concept_id", None)
         if not concept_id:
-            raise PayloadValidationError('CONCEPT_ID is required.')
+            raise PayloadValidationError("CONCEPT_ID is required.")
 
         concept = Concept.objects.get(concept_id=concept_id)
         if not concept:
-            raise PayloadValidationError(
-                'Any concept found with the given concept_id.')
+            raise PayloadValidationError("Any concept found with the given concept_id.")
 
-        data['employee'] = employee
+        data["employee"] = employee
         data["hours"] = time_to_decimal(data.get("hours"))
-        data['concept'] = concept
+        data["concept"] = concept
 
         Overtime.create(request, **data)
 
@@ -153,7 +154,8 @@ class OvertimeViewSet(BaseProtectedViewSet):
         overtime = Overtime.objects.get(overtime_id=overtime_id)
         if not overtime:
             raise PayloadValidationError(
-                f'Any data found with the given overtime_id "{overtime_id}".')
+                f'Any data found with the given overtime_id "{overtime_id}".'
+            )
 
         data["hours"] = time_to_decimal(data.get("hours"))
 
@@ -181,24 +183,29 @@ class OvertimeViewSet(BaseProtectedViewSet):
 
         if fields:
             if not isinstance(fields, list):
-                raise PayloadValidationError(
-                    "Invalid format for field 'FIELDS'")
+                raise PayloadValidationError("Invalid format for field 'FIELDS'")
             serializer = DynamicSerializer(
                 model=Overtime, fields=fields, instance=page, many=True
             )
         else:
             serializer = OvertimeSerializer(
-                page, many=True, context={"request": request})
+                page, many=True, context={"request": request}
+            )
 
         return paginator.get_paginated_response(serializer.data)
 
     @viewException
-    def get_overtime(self, _reuqest: Request, overtime_id: str):
+    def get_overtime(self, _request: Request, overtime_id: str):
         overtime = Overtime.objects.get(overtime_id=overtime_id)
 
         if not overtime:
             raise PayloadValidationError(
-                f"No se encontro ningun registro con el id: '{overtime_id}'")
+                f"No se encontró ningún registro con el id: '{overtime_id}'"
+            )
+
+        print("*" * 75)
+        print(f"{model_to_dict(overtime)}")
+        print("*" * 75)
 
         serializer = OvertimeSerializer(overtime, data=model_to_dict(overtime))
         serializer.is_valid(raise_exception=True)
