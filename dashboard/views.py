@@ -157,7 +157,9 @@ class DashboardViewSet(BaseProtectedViewSet):
 
     @viewException
     def get_user_statistic(self, _request: Request):
-        users = User.objects.filter(Q(state__in=[User.ACTIVE, User.INTERN]))
+        users = User.objects.filter(
+            Q(state__in=[User.ACTIVE, User.INTERN, User.INACTIVE])
+        )
 
         line_chart_data = UserStatistics.get_employees_by_month()
 

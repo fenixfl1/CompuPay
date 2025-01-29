@@ -868,7 +868,10 @@ class Department(BaseUsersModels):
 
     def get_employees_count(self) -> int:
         return User.objects.filter(
-            Q(state=User.ACTIVE) & Q(is_staff=True) & Q(department=self)
+            Q(state=User.ACTIVE)
+            & Q(is_staff=True)
+            & Q(department=self)
+            & Q(salary__gt=0)
         ).count()
 
     class Meta:
