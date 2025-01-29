@@ -10,7 +10,7 @@ from django.db.models import (
     ExpressionWrapper,
     DecimalField,
 )
-from django.db.models.functions import ExtractDay, TruncMonth, ExtractMonth
+from django.db.models.functions import ExtractDay, TruncMonth
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -35,7 +35,7 @@ from users.models import ActivityLog, Department, User
 
 class DashboardViewSet(BaseProtectedViewSet):
     """
-    View set for dashborad informatio
+    View set for dashboard information
     """
 
     @viewException
@@ -46,7 +46,7 @@ class DashboardViewSet(BaseProtectedViewSet):
 
         condition = request.data.get("condition", None)
         if not condition:
-            raise PayloadValidationError("condition is requiered")
+            raise PayloadValidationError("condition is required")
 
         conditions, exclude = advanced_query_filter(condition)
 
@@ -65,7 +65,7 @@ class DashboardViewSet(BaseProtectedViewSet):
     @viewException
     def get_employees_by_department(self, _request: Request):
         """
-        Return a list of employes grouped by department\n
+        Return a list of employees grouped by department\n
         `METHOD` POST
         """
         departments = Department.objects.all()
@@ -159,7 +159,7 @@ class DashboardViewSet(BaseProtectedViewSet):
     def get_user_statistic(self, _request: Request):
         users = User.objects.filter(Q(state__in=[User.ACTIVE, User.INTERN]))
 
-        line_chart_data = UserStatistics.get_employes_by_month()
+        line_chart_data = UserStatistics.get_employees_by_month()
 
         data = users.aggregate(
             total_registered=Count("user_id"),

@@ -640,7 +640,7 @@ class UserViewSet(ViewSet):
             instance=new_roles_users,
             user=request.user,
             action=2,
-            message=f"@{request.user.username} le removio su rol a {user.username}",
+            message=f"@{request.user.username} le removió su rol a {user.username}",
         )
 
         return Response({"message": "Role removed successfully."})

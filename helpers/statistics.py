@@ -163,7 +163,7 @@ class UserStatistics:
         return employees_by_department
 
     @staticmethod
-    def get_employes_by_month() -> list[dict]:
+    def get_employees_by_month() -> list[dict]:
         employees = User.objects.filter(state=User.ACTIVE)
 
         employees_by_month = (

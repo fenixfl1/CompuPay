@@ -34,11 +34,11 @@ class EmployeesByDepartmentSerializer(serializers.ModelSerializer):
         fields = ("name", "value", "fill")
 
 
-class EmployeesPerformanceSerialezer(serializers.ModelSerializer):
-    deparments = serializers.SerializerMethodField()
+class EmployeesPerformanceSerializer(serializers.ModelSerializer):
+    department = serializers.SerializerMethodField()
 
 
-class TaskPermanceSerilizer(BaseSerializer):
+class TaskPerformanceSerializer(BaseSerializer):
     departments = serializers.SerializerMethodField()
 
     def get_departments(self, _obj):
@@ -52,9 +52,9 @@ class TaskPermanceSerilizer(BaseSerializer):
         result = {}
 
         for item in period_value:
-            departmane_name = instance["users__department__name"]
+            department_name = instance["users__department__name"]
             task_count = instance["task_count"]
-            result[departmane_name] = task_count
+            result[department_name] = task_count
             result["name"] = get_month_day_name(item, period)
 
         return result
