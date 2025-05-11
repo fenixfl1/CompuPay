@@ -152,7 +152,7 @@ class User(AbstractBaseUser):
     )
     avatar = models.TextField(null=True, blank=True)
     address = models.TextField(null=True, blank=True)
-    is_staff = models.BooleanField(default=False)
+    is_staff = models.BooleanField(default=True)
     is_superuser = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     resume = models.TextField(null=True, blank=True)
