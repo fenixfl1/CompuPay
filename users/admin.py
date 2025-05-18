@@ -86,6 +86,7 @@ class UserAdmin(BaseModelAdmin):
     list_filter = ("is_staff", "is_superuser", "department")
     list_display = (
         "user_id",
+        "business_id",
         "render_avatar",
         "full_name",
         "username",

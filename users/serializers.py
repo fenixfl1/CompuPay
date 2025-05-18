@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework.request import Request
 from django.db.models import Q
+from django.forms import model_to_dict
 
 from helpers.serializers import (
     BaseModelSerializer,
@@ -20,6 +21,7 @@ from users.models import (
     RolesUsers,
     User,
     UserPermission,
+    Business
 )
 
 
@@ -31,6 +33,15 @@ class RolesSerializer(BaseModelSerializer):
 
     class Meta:
         model = Roles
+        
+class BusinessSerializer(BaseModelSerializer):
+    """
+    Serializer for the business model.
+    """
+
+    class Meta:
+        model = Business
+        fields = "__all__"
 
 
 class AuthenticateUserSerializer(BaseModelSerializer):
@@ -77,6 +88,7 @@ class AuthenticateUserSerializer(BaseModelSerializer):
             "full_name",
             "roles",
             "avatar",
+            "business",
             "session_cookie",
         )
 

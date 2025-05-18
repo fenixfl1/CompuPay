@@ -190,6 +190,13 @@ class UserViewSet(ViewSet):
     authentication_classes = [TokenAuthentication]
     pagination_class = PaginationSerializer
     serializer_class = UserSerializer
+    
+    @ViewException
+    def get_business_info(self, request: Request):
+        """
+        This endpoint is used to get the business information of a user
+        `METHOD`: GET
+        """
 
     @viewException
     def change_password(self, request):

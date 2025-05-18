@@ -198,6 +198,15 @@ class User(AbstractBaseUser):
         blank=True,
         db_column="department_id",
     )
+    business = models.ForeignKey(
+        "Business",
+        on_delete=models.CASCADE,
+        to_field="business_id",
+        related_name="%(class)s_business",
+        null=True,
+        blank=True,
+        db_column="business_id",
+    )
 
     objects = UserManager()
 
