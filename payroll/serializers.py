@@ -86,6 +86,46 @@ class PayrollEntrySerializer(BaseModelSerializer):
     overtimes = serializers.SerializerMethodField()
     vacations = serializers.SerializerMethodField()
     other_discount = serializers.SerializerMethodField()
+    net_salary = serializers.SerializerMethodField()
+
+    def get_net_salary(self, instance: PayrollEntry):
+        user = instance.user
+        payroll = instance.payroll
+
+        # Salario base proporcional al período
+        base_salary = (user.salary or 0) / (payroll.get_config().periods or 1)
+
+        # Configuración de inclusión
+        include_overtime = getattr(payroll, "includes_overtime", True)
+        include_leaves = getattr(payroll, "includes_leaves", True)
+        show_withholding = getattr(payroll, "show_withholding", True)
+
+        # Componentes del salario
+        bonus = self.get_bonus(instance) or 0
+        overtime = self.get_overtimes(instance) if include_overtime else 0
+        vacations = self.get_vacations(instance) if include_leaves else 0
+
+        # Descuentos
+        discount = self.get_discount(instance) or 0
+        other_discount = self.get_other_discount(instance) if include_leaves else 0
+
+        isr = self.get_isr(instance) if show_withholding else 0
+        afp = self.get_afp(instance) if show_withholding else 0
+        sfs = self.get_sfs(instance) if show_withholding else 0
+
+        net_salary = (
+            base_salary
+            + overtime
+            + vacations
+            + bonus
+            - discount
+            - other_discount
+            - isr
+            - afp
+            - sfs
+        )
+
+        return round(net_salary, 2)
 
     def get_vacations(self, instance: PayrollEntry):
         vacations = instance.get_leaves().values_list("amount", flat=True)

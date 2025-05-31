@@ -43,6 +43,7 @@ check_username = views.UserViewSet.as_view({"post": "check_username"})
 check_identity_document = views.UserViewSet.as_view({"post": "check_identity_document"})
 update_avatar = views.UserViewSet.as_view({"put": "update_avatar"})
 generate_report = views.UserViewSet.as_view({"post": "generate_report"})
+get_business_info = views.UserViewSet.as_view({"get": "get_business_info"})
 
 
 urlpatterns = [
@@ -65,6 +66,7 @@ urlpatterns = [
     path(f"{BASE_PATH_USERS}check_identity_document/", check_identity_document),
     path(f"{BASE_PATH_USERS}update_avatar/", update_avatar),
     path(f"{BASE_PATH_USERS}generate_report/", generate_report),
+    path(f"{BASE_PATH_USERS}get_business_info/<int:business_id>", get_business_info),
 ]
 
 urlpatterns = format_suffix_patterns(urlpatterns)

@@ -959,6 +959,8 @@ class Business(BaseUsersModels):
     name = models.CharField(max_length=100, null=False, blank=False)
     rnc = models.CharField(max_length=11)
     logo = models.TextField(null=True, blank=True)
+    phone = models.CharField(max_length=20, null=True, blank=True)
+    address = models.TextField(null=True, blank=True)
     representative = models.ForeignKey(
         User,
         on_delete=models.CASCADE,

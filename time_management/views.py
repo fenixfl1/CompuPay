@@ -20,7 +20,7 @@ from users.models import User
 class LeavesViewSet(BaseProtectedViewSet):
 
     @viewException
-    def crate_leave(self, request: Request):
+    def create_leave(self, request: Request):
         data = dict_key_to_lower(request.data)
 
         if not data:
@@ -157,11 +157,12 @@ class OvertimeViewSet(BaseProtectedViewSet):
                 f'Any data found with the given overtime_id "{overtime_id}".'
             )
 
-        data["hours"] = time_to_decimal(data.get("hours"))
+        if data.get("hours", None) is not None:
+            data["hours"] = time_to_decimal(data.get("hours"))
 
         Overtime.update(request, overtime, **data)
 
-        return Response({"message": "Registro actualizado con exito."})
+        return Response({"message": "Registro actualizado con éxito."})
 
     @viewException
     def get_overtimes(self, request: Request):

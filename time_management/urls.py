@@ -7,7 +7,7 @@ from core.settings import PATH_BASE
 
 BASE_PATH_TIME_MANAGEMENT = f"{PATH_BASE}time_management/"
 
-create_leave = views.LeavesViewSet.as_view({"post": "crate_leave"})
+create_leave = views.LeavesViewSet.as_view({"post": "create_leave"})
 update_leave = views.LeavesViewSet.as_view({"put": "update_leave"})
 get_leaves = views.LeavesViewSet.as_view({"post": "get_leaves"})
 get_leave = views.LeavesViewSet.as_view({"get": "get_leave"})

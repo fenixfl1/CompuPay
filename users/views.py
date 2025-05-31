@@ -40,9 +40,11 @@ from users.models import (
     RolesUsers,
     User,
     UserPermission,
+    Business,
 )
 from users.serializers import (
     AuthenticateUserSerializer,
+    BusinessSerializer,
     MenuOptionsSerializer,
     RolesSerializer,
     UserReportSerializer,
@@ -190,13 +192,20 @@ class UserViewSet(ViewSet):
     authentication_classes = [TokenAuthentication]
     pagination_class = PaginationSerializer
     serializer_class = UserSerializer
-    
-    @ViewException
-    def get_business_info(self, request: Request):
+
+    @viewException
+    def get_business_info(self, _request, business_id: int):
         """
         This endpoint is used to get the business information of a user
         `METHOD`: GET
         """
+        business = Business.objects.get(business_id=business_id)
+        serializer = BusinessSerializer(
+            business, data=model_to_dict(business), context={"request": _request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        return Response({"data": serializer.data})
 
     @viewException
     def change_password(self, request):

@@ -1,12 +1,10 @@
 from rest_framework import serializers
 from rest_framework.request import Request
 from django.db.models import Q
-from django.forms import model_to_dict
 
 from helpers.serializers import (
     BaseModelSerializer,
     BaseReportModelSerializer,
-    DynamicFieldsModelSerializer,
 )
 from helpers.utils import currency_format
 from payroll.models import DeductionXuser
@@ -21,7 +19,7 @@ from users.models import (
     RolesUsers,
     User,
     UserPermission,
-    Business
+    Business,
 )
 
 
@@ -33,7 +31,8 @@ class RolesSerializer(BaseModelSerializer):
 
     class Meta:
         model = Roles
-        
+
+
 class BusinessSerializer(BaseModelSerializer):
     """
     Serializer for the business model.
@@ -52,6 +51,15 @@ class AuthenticateUserSerializer(BaseModelSerializer):
     roles = serializers.SerializerMethodField()
     session_cookie = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
+    business_id = serializers.SerializerMethodField()
+
+    def get_business_id(self, instance: User):
+        business = Business.objects.filter(
+            Q(business_id=instance.business_id) & Q(state=Business.ACTIVE)
+        ).first()
+        if business:
+            return business.business_id
+        return None
 
     def get_full_name(self, instance: User):
         return f"{instance.name} {instance.last_name}"
@@ -88,7 +96,7 @@ class AuthenticateUserSerializer(BaseModelSerializer):
             "full_name",
             "roles",
             "avatar",
-            "business",
+            "business_id",
             "session_cookie",
         )
 
