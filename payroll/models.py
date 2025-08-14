@@ -664,47 +664,55 @@ class DeductionXuser(BaseModels):
 
     @classmethod
     def get_isr(cls, user: User) -> Decimal:
-        # Obtén la deducción ISR desde la base de datos
         user_deduction = DeductionXuser.get_user_deductions(user, "ISR")
-        if user_deduction:
-            deduction = Deductions.objects.filter(
-                Q(name="ISR")
-                & Q(state=Deductions.ACTIVE)
-                & Q(deduction_id=user_deduction.deduction.deduction_id)
-            ).first()
+        if not user_deduction:
+            return Decimal("0.00")
 
-            # Porcentaje específico del usuario
-            percentage = deduction.percentage / 100
+        deduction = Deductions.objects.filter(
+            Q(name="ISR")
+            & Q(state=Deductions.ACTIVE)
+            & Q(deduction_id=user_deduction.deduction.deduction_id)
+        ).first()
 
-            # Calcula las deducciones de AFP y SFS
-            afp = DeductionXuser.get_afp(user)
-            sfs = DeductionXuser.get_sfs(user)
+        if not deduction:
+            return Decimal("0.00")
 
-            # Resta AFP y SFS del salario bruto
-            tss = afp + sfs
-            salary = user.salary - tss
+        afp = DeductionXuser.get_afp(user)
+        sfs = DeductionXuser.get_sfs(user)
+        taxable_monthly_salary = user.salary - afp - sfs
+        taxable_annual_salary = taxable_monthly_salary * 12
 
-            # Calcula el salario neto anual
-            annual_net_salary = salary * 12
+        # Aquí los datos de tu tabla de ISR (pueden estar en DB)
+        tramo1_base = Decimal("416220.00")
+        tramo2_base = Decimal("624329.00")
+        tramo3_base = Decimal("867123.00")
+        fijo_tramo2 = Decimal("31216.00")
+        fijo_tramo3 = Decimal("79776.00")
 
-            # Aplica el porcentaje correspondiente para calcular el ISR mensual
-            isr = (annual_net_salary * percentage) / 12
+        percentage = deduction.percentage / 100
 
-            return Decimal(isr)
-        return Decimal("0.0")
+        if percentage == Decimal("0.15"):
+            isr_anual = (taxable_annual_salary - tramo1_base) * percentage
+        elif percentage == Decimal("0.20"):
+            isr_anual = fijo_tramo2 + (taxable_annual_salary - tramo2_base) * percentage
+        elif percentage == Decimal("0.25"):
+            isr_anual = fijo_tramo3 + (taxable_annual_salary - tramo3_base) * percentage
+        else:
+            isr_anual = Decimal("0.00")
+
+        return (isr_anual / 12).quantize(Decimal("0.01"))
 
     @classmethod
     def get_deduction_amount(cls, user: User, name: str):
-        user_deduction = DeductionXuser.get_user_deductions(user, name)
-        if user_deduction:
-            deduction = Deductions.objects.filter(
-                Q(name=name)
-                & Q(state=Deductions.ACTIVE)
-                & Q(deduction_id=user_deduction.deduction.deduction_id)
-            ).first()
-            percentage = deduction.percentage
-            return (user.salary * percentage) / 100
-        return 0.0
+        match name:
+            case "ISR":
+                return cls.get_isr(user)
+            case "AFP":
+                return cls.get_afp(user)
+            case "SFS":
+                return cls.get_sfs(user)
+            case _:
+                return 0.0
 
     class Meta:
         db_table = "DEDUCTION_X_USER"
