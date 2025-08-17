@@ -122,7 +122,7 @@ class UserSerializer(BaseModelSerializer):
         return None
 
     def get_deductions(self, obj: User):
-        deductions = DeductionXuser.objects.filter(user=obj.username)
+        deductions = DeductionXuser.objects.filter(user=obj.username, state="A")
         return deductions.values_list("deduction_id", flat=True)
 
     def get_name_supervisor(self, instance: User | dict):

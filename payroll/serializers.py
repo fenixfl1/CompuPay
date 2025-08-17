@@ -23,6 +23,7 @@ class PayrollInfoSerializer(BaseModelSerializer):
     label = serializers.SerializerMethodField()
     payroll_config = serializers.SerializerMethodField()
     current_period = serializers.SerializerMethodField()
+    deduction_info = serializers.SerializerMethodField()
 
     def get_current_period(self, instance: Payroll):
         return instance.period
@@ -32,6 +33,9 @@ class PayrollInfoSerializer(BaseModelSerializer):
         serializer = PayrollSettingSerializer(config, data=model_to_dict(config))
         serializer.is_valid(raise_exception=True)
         return serializer.data
+
+    def get_deduction_info(self, instance: Payroll):
+        return repr(instance.get_config())
 
     def get_label(self, instance: Payroll):
         return str(instance)
@@ -46,6 +50,7 @@ class PayrollInfoSerializer(BaseModelSerializer):
             "payroll_config",
             "includes_overtime",
             "includes_leaves",
+            "deduction_info",
         )
 
 
@@ -225,6 +230,7 @@ class PayrollHistorySerializer(BaseModelSerializer):
 
 
 class PayrollEntryWithDetailSerializer(PayrollEntrySerializer):
+    net_salary = serializers.SerializerMethodField()
     payment_details = serializers.SerializerMethodField()
 
     def get_payment_details(self, instance: PayrollEntry):
@@ -233,6 +239,50 @@ class PayrollEntryWithDetailSerializer(PayrollEntrySerializer):
         )
         serializer = PayrollPaymentDetailSerializer(details, many=True)
         return serializer.data
+
+    def get_net_salary(self, instance: PayrollEntry):
+        user = instance.user
+        payroll = instance.payroll
+
+        # Salario base proporcional al período
+        base_salary = (user.salary or 0) / (payroll.get_config().periods or 1)
+
+        # Configuración de inclusión
+        include_overtime = getattr(payroll, "includes_overtime", True)
+        include_leaves = getattr(payroll, "includes_leaves", True)
+        show_withholding = getattr(payroll, "show_withholding", True)
+
+        # Componentes del salario
+        bonus = self.get_bonus(instance) or 0
+        overtime = self.get_overtimes(instance) if include_overtime else 0
+        vacations = self.get_vacations(instance) if include_leaves else 0
+
+        # Descuentos
+        discount = self.get_discount(instance) or 0
+        other_discount = self.get_other_discount(instance) if include_leaves else 0
+
+        isr = self.get_isr(instance) if show_withholding else 0
+        afp = self.get_afp(instance) if show_withholding else 0
+        sfs = self.get_sfs(instance) if show_withholding else 0
+
+        net_salary = (
+            base_salary
+            + overtime
+            + vacations
+            + bonus
+            - discount
+            - other_discount
+            - isr
+            - afp
+            - sfs
+        )
+
+        if instance.user.username == "brosario":
+            print("*" * 75)
+            print(f"{net_salary}")
+            print("*" * 75)
+
+        return round(net_salary, 2)
 
     class Meta:
         model = PayrollEntry

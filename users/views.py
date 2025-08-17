@@ -387,7 +387,7 @@ class UserViewSet(ViewSet):
         user: User = User.objects.create_user(**data)
 
         try:
-            DeductionXuser.add_deductions_to_user(deductions, user)
+            DeductionXuser.add_deductions_to_user(deductions, user, request)
         except Exception as e:
             RolesUsers.objects.filter(user_id=user.user_id).delete()
             user.delete()
@@ -446,81 +446,146 @@ class UserViewSet(ViewSet):
 
     def update_user(self, request: Request):
         """
-        Update the given user.\n
+        Update the given user.
         `METHOD`: PUT
         """
         data = dict_key_to_lower(request.data)
 
-        user_id = data.get("user_id", None)
+        user = self._get_user(data)
+
+        self._validate_fields(data)
+        data["supervisor"] = self._get_supervisor(data.get("supervisor"))
+        roles = self._get_roles(data.pop("roles", None))
+        deductions = data.pop("deductions", None)
+        data["department"] = self._get_department(data.get("department"))
+
+        message = "User updated successfully."
+        message = self._assign_roles(request, user, roles, message)
+        message = self._assign_deductions(request, user, deductions, message)
+
+        updated_user = User.update_user(request, **data)
+
+        serializer = UserSerializer(
+            updated_user,
+            data=model_to_dict(updated_user),
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        self._log_activity(request, updated_user)
+
+        return Response({"data": serializer.data, "message": message})
+
+    # -------------------------
+    # Métodos privados helpers
+    # -------------------------
+
+    def _get_user(self, data: dict) -> User:
+        user_id = data.get("user_id")
         if not user_id:
-            raise APIException("user_id id is required.")
+            raise APIException("user_id is required.")
+        try:
+            return User.objects.get(user_id=user_id)
+        except User.DoesNotExist:
+            raise APIException(f"User with id: '{user_id}' was not found.")
 
-        user = User.objects.get(user_id=user_id)
-        if not user:
-            raise UserDoesNotExist(
-                f"User with id: '{data.get('user_id')}' was not found."
-            )
-
+    def _validate_fields(self, data: dict):
         for field in data:
             if field in User.NON_UPDATEABLE_FIELDS:
                 raise APIException(f"Field '{field}' is not updatable.")
 
-        supervisor = data.get("supervisor", None)
-        if supervisor:
-            data["supervisor"] = User.objects.get(username=supervisor)
-            if not data["supervisor"]:
-                raise APIException(f"Supervisor '{supervisor}' was not found.")
+    def _get_supervisor(self, supervisor_username: str) -> User | None:
+        if not supervisor_username:
+            return None
+        try:
+            return User.objects.get(username=supervisor_username)
+        except User.DoesNotExist:
+            raise APIException(f"Supervisor '{supervisor_username}' was not found.")
 
-        roles = data.pop("roles", None)
-        if roles:
-            roles = Roles.objects.filter(rol_id__in=roles)
-            if not roles:
-                raise APIException("Invalid roles")
+    def _get_roles(self, roles: list[int]) -> list[Roles]:
+        if not roles:
+            return []
+        queryset = Roles.objects.filter(rol_id__in=roles)
+        if not queryset:
+            raise APIException("Invalid roles")
+        return queryset
 
-        deductions = data.pop("deductions")
+    def _assign_roles(self, request: Request, user: User, roles, message: str) -> str:
+        """
+        Sincroniza los roles de un usuario con la lista dada:
 
-        message = "User updated successfully."
+        - Activa los roles que estaban inactivos y fueron incluidos.
+        - Crea los roles que no existían.
+        - Inactiva los roles que no fueron incluidos.
+        """
+        if not roles:
+            return message
 
-        if roles:
-            try:
-                roles_users = RolesUsers.objects.filter(user_id=user)
-                if roles_users:
-                    roles_users.update(state=RolesUsers.INACTIVE)
-                for role in roles:
-                    RolesUsers.create(
-                        request, user_id=user, rol_id=role, state=RolesUsers.ACTIVE
+        try:
+            current_roles = RolesUsers.objects.filter(user=user)
+
+            # 1. Activar los roles que vienen en la lista pero están inactivos
+            current_roles.filter(rol_id__in=roles, state=RolesUsers.INACTIVE).update(
+                state=RolesUsers.ACTIVE
+            )
+
+            # 2. Inactivar los roles existentes que no están en la lista
+            current_roles.filter(
+                rol_id__in=set(current_roles.values_list("rol_id", flat=True))
+                - set(roles)
+            ).update(state=RolesUsers.INACTIVE)
+
+            # 3. Crear roles que no existan
+            existing_ids = current_roles.values_list("rol_id", flat=True)
+            new_roles = set(roles) - set(existing_ids)
+
+            RolesUsers.objects.bulk_create(
+                [
+                    RolesUsers(
+                        user=user,
+                        rol_id=role,
+                        state=RolesUsers.ACTIVE,
+                        created_by=request.user,
                     )
-            # pylint: disable=broad-except
-            except Exception:
-                message = "User updated successfully. But an error occurred while assigning roles."
+                    for role in new_roles
+                ]
+            )
 
-        if deductions:
-            try:
-                DeductionXuser.add_deductions_to_user(deductions, user)
-            # pylint: disable=broad-except
-            except Exception:
-                message = "User updated successfully. But an error occurred while assigning deductions"
+        except Exception:
+            return "User updated successfully. But an error occurred while assigning roles."
 
-        department = data.get("department", None)
-        if department:
-            data["department"] = Department.objects.get(department_id=department)
+        return message
 
-        user = User.update_user(request, **data)
+    def _assign_deductions(
+        self, request: Request, user: User, deductions, message: str
+    ) -> str:
+        if not deductions:
+            return message
+        try:
+            DeductionXuser.add_deductions_to_user(deductions, user, request)
+        except Exception as e:
+            print("*" * 75)
+            print(f"Error: {e}")
+            print("*" * 75)
+            return "User updated successfully. But an error occurred while assigning deductions"
+        return message
 
-        data = model_to_dict(user)
+    def _get_department(self, department_id: int) -> Department | None:
+        if not department_id:
+            return None
+        try:
+            return Department.objects.get(department_id=department_id)
+        except Department.DoesNotExist:
+            raise APIException(f"Department with id '{department_id}' was not found.")
 
-        serializer = UserSerializer(user, data=data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-
+    def _log_activity(self, request: Request, user: User):
         if user != request.user:
             ActivityLog.register_activity(
                 instance=user,
                 user=request.user,
                 action=1,
-                message=f"@{request.user.username} creo al usuario @{user.username}",
+                message=f"@{request.user.username} actualizó al usuario @{user.username}",
             )
-
-        return Response({"data": serializer.data, "message": message})
 
     @viewException
     def update_avatar(self, request: Request):

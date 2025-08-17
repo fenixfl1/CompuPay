@@ -2,6 +2,7 @@
 
 import locale
 import datetime
+from typing import Iterable
 from datetime import timedelta
 from decimal import Decimal, getcontext
 from django.db import IntegrityError, models, transaction
@@ -318,7 +319,7 @@ class PayrollSettings(BaseModels):
     DEDUCTION_PERIOD_CHOICES = (
         (1, "Primero"),
         (2, "Segundo"),
-        (2, "Tercero"),
+        (3, "Tercero"),
         (4, "Cuarto"),
     )
 
@@ -332,6 +333,9 @@ class PayrollSettings(BaseModels):
 
     def __str__(self):
         return f"Configuración Nómina - {self.pk}"
+
+    def __repr__(self):
+        return f"Las deducciones se descuentan en la {self.get_deduction_period_display()} Nómina de cada mes"
 
     def clean(self):
         super().clean()
@@ -539,6 +543,17 @@ class Deductions(BaseModels):
     percentage = models.DecimalField(max_digits=5, decimal_places=2)
     description = models.TextField(max_length=250)
     order = models.IntegerField(null=True, blank=True)
+    salary_cap = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Maximum salary amount to which \
+            this deduction applies",
+    )
+    fixed_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True
+    )
     concept = models.ForeignKey(
         Concept,
         on_delete=models.CASCADE,
@@ -605,22 +620,55 @@ class DeductionXuser(BaseModels):
         return deductions_user.exists()
 
     @classmethod
-    def add_deductions_to_user(cls, deductions: list["Deductions"], user: User):
-        user_deductions = []
-        max_id = DeductionXuser.objects.all().aggregate(Max("id"))["id__max"]
-        for deduction in deductions:
-            max_id += 1
-            user_deductions.append(
-                DeductionXuser(
-                    id=max_id,
-                    state=Deductions.ACTIVE,
-                    user=user,
-                    deduction=Deductions.objects.get(deduction_id=deduction),
-                    created_by=user.created_by,
-                    created_at=datetime.datetime.now(),
-                )
+    def add_deductions_to_user(cls, deduction_ids, user, request: Request):
+        """
+        Sincroniza las deducciones de un usuario con el listado dado.
+
+        - Activa las deducciones que estaban inactivas y fueron incluidas.
+        - Crea las que no existían.
+        - Inactiva las que no fueron incluidas en deduction_ids.
+        """
+
+        # 1. Obtener todas las deducciones actuales del usuario
+        current_deductions = DeductionXuser.objects.filter(user=user)
+
+        # 2. Activar las que vienen en deduction_ids pero están inactivas
+        current_deductions.filter(deduction_id__in=deduction_ids, state="I").update(
+            state="A"
+        )
+
+        print("*" * 75)
+        print(
+            f'{set(
+                current_deductions.values_list("deduction_id", flat=True)
             )
-        DeductionXuser.objects.bulk_create(user_deductions)
+            - set(deduction_ids)}'
+        )
+        print("*" * 75)
+
+        # 3. Inactivar las que no están en deduction_ids
+        current_deductions.filter(
+            deduction_id__in=list(
+                set(current_deductions.values_list("deduction_id", flat=True))
+                - set(deduction_ids)
+            )
+        ).update(state="I")
+
+        # 4. Crear nuevas deducciones que no existan
+        existing_ids = current_deductions.values_list("deduction_id", flat=True)
+        new_ids = set(deduction_ids) - set(existing_ids)
+
+        DeductionXuser.objects.bulk_create(
+            [
+                DeductionXuser(
+                    user=user,
+                    deduction=Deductions.objects.get(deduction_id=ded_id),
+                    state="A",
+                    created_by=request.user,
+                )
+                for ded_id in new_ids
+            ]
+        )
 
     def create_deduction_user(self, request, **kwargs):
         deduction_user_count = self.objects.all().count()
@@ -645,9 +693,17 @@ class DeductionXuser(BaseModels):
                 & Q(state=Deductions.ACTIVE)
                 & Q(deduction_id=user_deduction.deduction.deduction_id)
             ).first()
-            percentage = deduction.percentage
-            return Decimal((user.salary * percentage) / 100)
-        return Decimal("0.0")
+            if deduction:
+                percentage = deduction.percentage
+                base_salary = (
+                    min(user.salary, deduction.salary_cap)
+                    if deduction.salary_cap
+                    else user.salary
+                )
+                return Decimal((base_salary * percentage) / 100).quantize(
+                    Decimal("0.01")
+                )
+        return Decimal("0.00")
 
     @classmethod
     def get_sfs(cls, user: User) -> Decimal:
@@ -658,9 +714,17 @@ class DeductionXuser(BaseModels):
                 & Q(state=Deductions.ACTIVE)
                 & Q(deduction_id=user_deduction.deduction.deduction_id)
             ).first()
-            percentage = deduction.percentage
-            return Decimal((user.salary * percentage) / 100)
-        return Decimal("0.0")
+            if deduction:
+                percentage = deduction.percentage
+                base_salary = (
+                    min(user.salary, deduction.salary_cap)
+                    if deduction.salary_cap
+                    else user.salary
+                )
+                return Decimal((base_salary * percentage) / 100).quantize(
+                    Decimal("0.01")
+                )
+        return Decimal("0.00")
 
     @classmethod
     def get_isr(cls, user: User) -> Decimal:
@@ -682,21 +746,16 @@ class DeductionXuser(BaseModels):
         taxable_monthly_salary = user.salary - afp - sfs
         taxable_annual_salary = taxable_monthly_salary * 12
 
-        # Aquí los datos de tu tabla de ISR (pueden estar en DB)
-        tramo1_base = Decimal("416220.00")
-        tramo2_base = Decimal("624329.00")
-        tramo3_base = Decimal("867123.00")
-        fijo_tramo2 = Decimal("31216.00")
-        fijo_tramo3 = Decimal("79776.00")
-
+        base_salary_cap = deduction.salary_cap or Decimal("0.00")
+        fixed_amount = getattr(deduction, "fixed_amount", Decimal("0.00")) or Decimal(
+            "0.00"
+        )
         percentage = deduction.percentage / 100
 
-        if percentage == Decimal("0.15"):
-            isr_anual = (taxable_annual_salary - tramo1_base) * percentage
-        elif percentage == Decimal("0.20"):
-            isr_anual = fijo_tramo2 + (taxable_annual_salary - tramo2_base) * percentage
-        elif percentage == Decimal("0.25"):
-            isr_anual = fijo_tramo3 + (taxable_annual_salary - tramo3_base) * percentage
+        if taxable_annual_salary > base_salary_cap:
+            isr_anual = (
+                fixed_amount + (taxable_annual_salary - base_salary_cap) * percentage
+            )
         else:
             isr_anual = Decimal("0.00")
 
@@ -773,10 +832,7 @@ class PayrollPaymentDetail(BaseModels):
     def get_concept_name(self) -> str:
         try:
             return self.concept.name
-        except AttributeError as e:
-            print("*" * 75)
-            print(f"Error: {e}\n Self: {self}")
-            print("*" * 75)
+        except AttributeError:
             return ""
 
     def get_meployee_name(self):

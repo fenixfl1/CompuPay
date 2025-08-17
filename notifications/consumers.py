@@ -44,10 +44,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
             sender = await sync_to_async(User.objects.get)(username=self.username)
 
-            print("*" * 75)
-            print(f"Receivers: {str(receivers)} \n Sender: {sender.username}")
-            print("*" * 75)
-
             if not receivers:
                 receivers = [self.username]
 
@@ -59,11 +55,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 )
 
                 connected_user = connected_users.get(receiver.username, None)
-
-                print("*" * 75)
-                print(f"Connected Users: {connected_user}")
-                print("*" * 75)
-
                 if connected_user:
                     await self.channel_layer.send(
                         connected_user,

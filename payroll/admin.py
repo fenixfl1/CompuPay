@@ -49,6 +49,8 @@ class DeductionsAdmin(BaseModelAdmin):
         "name",
         "description",
         "percentage",
+        "salary_cap",
+        "fixed_amount",
     )
     search_fields = ("name", "description")
 
@@ -59,6 +61,7 @@ class DeductionXuserAdmin(BaseModelAdmin):
         "deduction",
     )
     search_fields = ("user", "deduction")
+    list_filter = ("user", "deduction")
 
 
 class AdjustmentAdmin(BaseModelAdmin):

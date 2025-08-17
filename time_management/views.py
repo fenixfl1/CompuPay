@@ -204,10 +204,6 @@ class OvertimeViewSet(BaseProtectedViewSet):
                 f"No se encontró ningún registro con el id: '{overtime_id}'"
             )
 
-        print("*" * 75)
-        print(f"{model_to_dict(overtime)}")
-        print("*" * 75)
-
         serializer = OvertimeSerializer(overtime, data=model_to_dict(overtime))
         serializer.is_valid(raise_exception=True)
 

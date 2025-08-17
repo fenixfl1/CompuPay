@@ -33,9 +33,6 @@ from users.models import (
 
 def reset_password(request, user_id):
     try:
-        print("*" * 75)
-        print(f"User: {user_id} \n Request: {request}")
-        print("*" * 75)
         user = User.objects.get(user_id=user_id)
         default_password = Parameters.objects.get(name="DEFAULT_PASSWORD").value
 
