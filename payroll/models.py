@@ -661,6 +661,7 @@ class DeductionXuser(BaseModels):
         DeductionXuser.objects.bulk_create(
             [
                 DeductionXuser(
+                    id=len(DeductionXuser.object.all()) + 1,
                     user=user,
                     deduction=Deductions.objects.get(deduction_id=ded_id),
                     state="A",
