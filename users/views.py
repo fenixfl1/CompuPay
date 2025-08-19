@@ -268,24 +268,36 @@ class UserViewSet(ViewSet):
     @viewException
     def check_identity_document(self, request: Request):
         """
-        This endpoint is used to check if an given identity document is available
-        `METHOD`: POST
+        Endpoint que valida una cédula:
+        1. Verifica formato y algoritmo
+        2. Verifica duplicidad en la base de datos
         """
         data = dict_key_to_lower(request.data)
         document = data.get("identity_document", None)
+
         if not document:
             raise PayloadValidationError(
-                "IDENTITY_DOCUMENT is required", status_code=status.HTTP_400_BAD_REQUEST
+                "IDENTITY_DOCUMENT is required",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        if User.objects.filter(identity_document=document).exists() is True:
+        # 🔹 Paso 1: Validar formato y algoritmo
+        if not self.__is_cedula_valida(document):
             return Response(
-                {"message": "El documento de identidad digitada ya existe."},
+                {"message": "La cédula digitada no es válida."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 🔹 Paso 2: Verificar si ya existe
+        if User.objects.filter(identity_document=document).exists():
+            return Response(
+                {"message": "La cédula ya está registrada."},
                 status=status.HTTP_409_CONFLICT,
             )
 
         return Response(
-            {"message": "Documento de identidad disponible."}, status=status.HTTP_200_OK
+            {"message": "Cédula válida y disponible."},
+            status=status.HTTP_200_OK,
         )
 
     @viewException
@@ -803,6 +815,29 @@ class UserViewSet(ViewSet):
         )
 
         return Response({"data": base64_pdf})
+
+    def __is_cedula_valida(self, cedula: str) -> bool:
+        """
+        Valida una cédula dominicana usando el algoritmo oficial.
+        """
+        if not cedula or len(cedula) != 11 or not cedula.isdigit():
+            return False
+
+        c = list(map(int, cedula))
+        v = [1, 2, 1, 2, 1, 2, 1, 2, 1, 2]
+        result = 0
+
+        for i in range(10):
+            up = c[i] * v[i]
+            if up >= 10:
+                up = sum(map(int, str(up)))  # sumar los dígitos
+            result += up
+
+        dp = result
+        uj = ((dp // 10) + 1) * 10
+        dp = uj - dp
+
+        return c[10] == dp
 
 
 class MenuOptionsViewSet(ViewSet):
