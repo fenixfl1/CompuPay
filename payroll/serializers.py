@@ -93,6 +93,24 @@ class PayrollEntrySerializer(BaseModelSerializer):
     other_discount = serializers.SerializerMethodField()
     net_salary = serializers.SerializerMethodField()
 
+    def _extra_income_for_isr(self, instance: PayrollEntry) -> Decimal:
+        """
+        Suma de ingresos que forman parte de la base imponible del mes
+        para el ISR: bonos + horas extras (+ vacaciones pagadas si aplica).
+        Respeta los flags del payroll.
+        """
+        payroll = instance.payroll
+        include_overtime = getattr(payroll, "includes_overtime", True)
+
+        bonus = Decimal(self.get_bonus(instance) or 0)
+        overtime = (
+            Decimal(self.get_overtimes(instance) or 0)
+            if include_overtime
+            else Decimal("0")
+        )
+
+        return bonus + overtime
+
     def get_net_salary(self, instance: PayrollEntry):
         user = instance.user
         payroll = instance.payroll
@@ -152,7 +170,8 @@ class PayrollEntrySerializer(BaseModelSerializer):
         return instance.get_status()
 
     def get_isr(self, instance: PayrollEntry):
-        return DeductionXuser.get_isr(instance.user)
+        extra_income = self._extra_income_for_isr(instance)
+        return DeductionXuser.get_isr(instance.user, extra_income)
 
     def get_afp(self, instance: PayrollEntry):
         return DeductionXuser.get_afp(instance.user)
@@ -276,11 +295,6 @@ class PayrollEntryWithDetailSerializer(PayrollEntrySerializer):
             - afp
             - sfs
         )
-
-        if instance.user.username == "brosario":
-            print("*" * 75)
-            print(f"{net_salary}")
-            print("*" * 75)
 
         return round(net_salary, 2)
 

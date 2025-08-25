@@ -499,7 +499,9 @@ class UserViewSet(ViewSet):
         try:
             return User.objects.get(user_id=user_id)
         except User.DoesNotExist:
-            raise APIException(f"User with id: '{user_id}' was not found.")
+            raise APIException(
+                f"User with id: '{user_id}' was not found."
+            ) from User.DoesNotExist
 
     def _validate_fields(self, data: dict):
         for field in data:
@@ -512,7 +514,9 @@ class UserViewSet(ViewSet):
         try:
             return User.objects.get(username=supervisor_username)
         except User.DoesNotExist:
-            raise APIException(f"Supervisor '{supervisor_username}' was not found.")
+            raise APIException(
+                f"Supervisor '{supervisor_username}' was not found."
+            ) from User.DoesNotExist
 
     def _get_roles(self, roles: list[int]) -> list[Roles]:
         if not roles:
@@ -562,7 +566,6 @@ class UserViewSet(ViewSet):
                     for role in new_roles
                 ]
             )
-
         except Exception:
             return "User updated successfully. But an error occurred while assigning roles."
 
@@ -588,7 +591,9 @@ class UserViewSet(ViewSet):
         try:
             return Department.objects.get(department_id=department_id)
         except Department.DoesNotExist:
-            raise APIException(f"Department with id '{department_id}' was not found.")
+            raise APIException(
+                f"Department with id '{department_id}' was not found."
+            ) from Department.DoesNotExist
 
     def _log_activity(self, request: Request, user: User):
         if user != request.user:

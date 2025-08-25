@@ -123,31 +123,40 @@ class Payroll(BaseModels):
             payroll_entries = payroll_entries.filter(user__user_id__in=users_id)
 
         for entry in payroll_entries:
-            if settings.periods == self.period:
+            # === OTRAS DEDUCCIONES ASIGNADAS (excluye AFP/SFS/ISR) ===
+            other_assigned_deductions_total = Decimal("0.00")
+            if apply_deduction:
                 deduction_user = DeductionXuser.get_user_deductions(entry.user)
-
                 if deduction_user:
-                    for deduction in deduction_user:
-                        detail = PayrollPaymentDetail(
+                    for du in deduction_user:
+                        name = (du.deduction.name or "").upper()
+                        if name in {"AFP", "SFS", "ISR"}:
+                            # Se calculan y crean aparte, de forma automática
+                            continue
+
+                        amount = DeductionXuser.get_deduction_amount(
+                            entry.user, du.deduction.name
+                        )
+                        PayrollPaymentDetail.objects.create(
                             payroll=entry.payroll,
                             payroll_entry=entry,
-                            concept=deduction.deduction.concept,
+                            concept=du.deduction.concept,
                             period=self.period,
-                            concept_amount=DeductionXuser.get_deduction_amount(
-                                entry.user, deduction.deduction.name
-                            ),
+                            concept_amount=amount,
                             state=PayrollPaymentDetail.ACTIVE,
                             created_by=request.user,
                             gross_salary=entry.user.salary,
-                            comment=f"Descuento mensual por concepto de \
-                                {deduction.deduction.name}",
+                            comment=f"Descuento mensual por concepto de {du.deduction.name}",
+                            operator="-",
                         )
-                        detail.save()
+                        # Importante: lo restamos del neto
+                        other_assigned_deductions_total += amount or Decimal("0.00")
 
+            # === AJUSTES / BONOS ===
             adjustments = Adjustment.get_by_entry(entry)
             if adjustments:
                 for adjustment in adjustments:
-                    detail = PayrollPaymentDetail(
+                    PayrollPaymentDetail.objects.create(
                         payroll=entry.payroll,
                         payroll_entry=entry,
                         concept=adjustment.concept,
@@ -159,9 +168,11 @@ class Payroll(BaseModels):
                         comment=adjustment.description,
                         operator=adjustment.concept.operator,
                     )
-                    detail.save()
-                    Adjustment.objects.update(state=Adjustment.COMPLETED)
+                Adjustment.objects.filter(id__in=[a.id for a in adjustments]).update(
+                    state=Adjustment.COMPLETED
+                )
 
+            # === HORAS EXTRAS ===
             total_overtime_amount = Decimal("0.0")
             total_hours = Decimal("0.0")
             overtimes = entry.get_employee_overtime()
@@ -173,7 +184,7 @@ class Payroll(BaseModels):
                     total_hours += overtime.hours
                     overtime.paid = True
 
-                detail = PayrollPaymentDetail(
+                PayrollPaymentDetail.objects.create(
                     payroll=entry.payroll,
                     payroll_entry=entry,
                     concept=concept,
@@ -185,17 +196,18 @@ class Payroll(BaseModels):
                     comment=f"{total_hours} horas por un total de:",
                     operator="+",
                 )
-                detail.save()
                 Overtime.objects.bulk_update(overtimes, ["paid"])
 
+            # === LICENCIAS (pagadas y con descuento) ===
             total_paid_leaves = Decimal("0.0")
             total_discount_leaves = Decimal("0.0")
+
             paid_leaves = entry.get_leaves()
             if self.includes_leaves and paid_leaves:
                 for leave in paid_leaves:
                     leave.state = Leaves.DONE
                     total_paid_leaves += leave.amount
-                    detail = PayrollPaymentDetail(
+                    PayrollPaymentDetail.objects.create(
                         payroll=entry.payroll,
                         payroll_entry=entry,
                         concept=leave.concept,
@@ -207,14 +219,13 @@ class Payroll(BaseModels):
                         comment=f"Pago por concepto de {leave.concept.name}",
                         operator="+",
                     )
-                    detail.save()
-                    Leaves.objects.bulk_update(paid_leaves, ["state"])
+                Leaves.objects.bulk_update(paid_leaves, ["state"])
 
                 discounted_leaves = entry.get_leaves(False)
                 for discount in discounted_leaves:
                     discount.state = Leaves.DONE
                     total_discount_leaves += discount.amount
-                    detail = PayrollPaymentDetail(
+                    PayrollPaymentDetail.objects.create(
                         payroll=entry.payroll,
                         payroll_entry=entry,
                         concept=discount.concept,
@@ -223,15 +234,18 @@ class Payroll(BaseModels):
                         state=PayrollPaymentDetail.ACTIVE,
                         created_by=request.user,
                         gross_salary=entry.user.salary,
-                        comment=f"Descuento por concepto de {
-                            discount.concept.name}",
+                        comment=f"Descuento por concepto de {discount.concept.name}",
                         operator="-",
                     )
-                    detail.save()
-                    Leaves.objects.bulk_update(paid_leaves, ["state"])
+                # FIX: actualizar el conjunto correcto
+                Leaves.objects.bulk_update(discounted_leaves, ["state"])
 
+            # === TOTALES VARIABLES ===
             discount = Adjustment.calc_deduction(entry) + total_discount_leaves
+
             bonus = Adjustment.calc_bonus(entry)
+
+            # === DEDUCCIONES DE LEY (AFP/SFS/ISR automáticas) ===
             afp = (
                 DeductionXuser.get_afp(entry.user)
                 if apply_deduction
@@ -242,23 +256,73 @@ class Payroll(BaseModels):
                 if apply_deduction
                 else Decimal("0.0")
             )
+
+            # ISR dinámico: salario del mes + extras (bonos + horas extras + licencias pagadas) - AFP - SFS
+            extra_income_for_isr = bonus + total_overtime_amount
             isr = (
-                DeductionXuser.get_isr(entry.user)
+                DeductionXuser.get_isr(entry.user, extra_income=extra_income_for_isr)
                 if apply_deduction
                 else Decimal("0.0")
             )
 
+            # Crear detalles explícitos de AFP / SFS / ISR
+            if apply_deduction:
+                if afp and afp != Decimal("0.0"):
+                    concept_afp = Concept.objects.filter(name="AFP").first()
+                    PayrollPaymentDetail.objects.create(
+                        payroll=entry.payroll,
+                        payroll_entry=entry,
+                        concept=concept_afp,
+                        period=self.period,
+                        concept_amount=afp,
+                        state=PayrollPaymentDetail.ACTIVE,
+                        created_by=request.user,
+                        gross_salary=entry.user.salary,
+                        comment="Descuento mensual por concepto de AFP",
+                        operator="-",
+                    )
+                if sfs and sfs != Decimal("0.0"):
+                    concept_sfs = Concept.objects.filter(name="SFS").first()
+                    PayrollPaymentDetail.objects.create(
+                        payroll=entry.payroll,
+                        payroll_entry=entry,
+                        concept=concept_sfs,
+                        period=self.period,
+                        concept_amount=sfs,
+                        state=PayrollPaymentDetail.ACTIVE,
+                        created_by=request.user,
+                        gross_salary=entry.user.salary,
+                        comment="Descuento mensual por concepto de SFS",
+                        operator="-",
+                    )
+                if isr and isr != Decimal("0.0"):
+                    concept_isr = Concept.objects.filter(name="ISR").first()
+                    PayrollPaymentDetail.objects.create(
+                        payroll=entry.payroll,
+                        payroll_entry=entry,
+                        concept=concept_isr,
+                        period=self.period,
+                        concept_amount=isr,
+                        state=PayrollPaymentDetail.ACTIVE,
+                        created_by=request.user,
+                        gross_salary=entry.user.salary,
+                        comment="Descuento mensual por concepto de ISR (automático)",
+                        operator="-",
+                    )
+
+            # === SALARIO NETO ===
             salary = entry.user.salary / settings.periods
             net_salary = (
                 (salary + bonus + total_overtime_amount + total_paid_leaves)
-                - discount
+                - discount  # ajustes de tipo deducción + licencias con descuento
+                - other_assigned_deductions_total  # OTRAS deducciones asignadas (≠ AFP/SFS/ISR)
                 - afp
                 - sfs
                 - isr
             )
 
             salary_concept = Concept.objects.get(name="SALARIO")
-            detail = PayrollPaymentDetail(
+            PayrollPaymentDetail.objects.create(
                 payroll=entry.payroll,
                 payroll_entry=entry,
                 concept=salary_concept,
@@ -269,9 +333,10 @@ class Payroll(BaseModels):
                 gross_salary=entry.user.salary,
                 operator=salary_concept.operator,
             )
-            detail.save()
 
             payroll_entries.update(status=True)
+
+        return self
 
     def save(self, *args, **kwargs):
         self.clean()  # Llama a clean antes de guardar
@@ -727,38 +792,54 @@ class DeductionXuser(BaseModels):
         return Decimal("0.00")
 
     @classmethod
-    def get_isr(cls, user: User) -> Decimal:
-        user_deduction = DeductionXuser.get_user_deductions(user, "ISR")
-        if not user_deduction:
+    def get_isr(cls, user: User, extra_income: Decimal = Decimal("0.00")) -> Decimal:
+        """
+        Calcula ISR mensual dinámicamente:
+        - Ignora lo asignado en DeductionXuser para ISR.
+        - Determina el rango ISR por el salario anual imponible calculado a partir
+          del salario mensual real (salario base + extras - AFP - SFS).
+        - 'extra_income' debe incluir bonos y horas extras del mes.
+        """
+
+        # Deducciones de ley que reducen la base imponible
+        afp = cls.get_afp(user)  # mantiene la lógica/cap actual
+        sfs = cls.get_sfs(user)
+
+        # Base mensual imponible: salario del mes + extras - AFP - SFS
+        taxable_monthly_salary = (
+            (user.salary + (extra_income or Decimal("0.00"))) - afp - sfs
+        )
+        if taxable_monthly_salary <= 0:
             return Decimal("0.00")
 
-        deduction = Deductions.objects.filter(
-            Q(name="ISR")
-            & Q(state=Deductions.ACTIVE)
-            & Q(deduction_id=user_deduction.deduction.deduction_id)
-        ).first()
+        taxable_annual_salary = taxable_monthly_salary * 12
+
+        # Selección automática del rango ISR activo cuyo salary_cap sea <= a la base anual
+        deduction = (
+            Deductions.objects.filter(
+                Q(name="ISR")
+                & Q(state=Deductions.ACTIVE)
+                & Q(salary_cap__lte=taxable_annual_salary)
+            )
+            .order_by("-salary_cap")
+            .first()
+        )
 
         if not deduction:
             return Decimal("0.00")
 
-        afp = DeductionXuser.get_afp(user)
-        sfs = DeductionXuser.get_sfs(user)
-        taxable_monthly_salary = user.salary - afp - sfs
-        taxable_annual_salary = taxable_monthly_salary * 12
-
         base_salary_cap = deduction.salary_cap or Decimal("0.00")
-        fixed_amount = getattr(deduction, "fixed_amount", Decimal("0.00")) or Decimal(
-            "0.00"
+        fixed_amount = getattr(deduction, "fixed_amount", None) or Decimal("0.00")
+        percentage = (deduction.percentage or Decimal("0.00")) / 100
+
+        # Fórmula de tramo: Monto fijo + (Excedente * %)
+        isr_anual = (
+            fixed_amount + (taxable_annual_salary - base_salary_cap) * percentage
+            if taxable_annual_salary > base_salary_cap
+            else Decimal("0.00")
         )
-        percentage = deduction.percentage / 100
 
-        if taxable_annual_salary > base_salary_cap:
-            isr_anual = (
-                fixed_amount + (taxable_annual_salary - base_salary_cap) * percentage
-            )
-        else:
-            isr_anual = Decimal("0.00")
-
+        # Devuelve ISR mensual
         return (isr_anual / 12).quantize(Decimal("0.01"))
 
     @classmethod

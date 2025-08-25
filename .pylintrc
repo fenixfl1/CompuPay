@@ -9,7 +9,8 @@ django-settings-module=core.settings
 disable=
     missing-docstring,
     invalid-name,
-    unused-import
+    unused-import,
+    broad-exception-caught
 
 [FORMAT]
 max-line-length=120
